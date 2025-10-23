@@ -1,0 +1,434 @@
+package scrapfly
+
+import (
+	"bytes"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	defaultHost    = "https://api.scrapfly.io"
+	defaultRetries = 3
+	defaultDelay   = 1 * time.Second
+	sdkUserAgent   = "Scrapfly-Go-SDK"
+)
+
+type Client struct {
+	key        string
+	host       string
+	httpClient *http.Client
+}
+
+func New(key string) (*Client, error) {
+	if key == "" {
+		return nil, ErrBadAPIKey
+	}
+	return &Client{
+		key:        key,
+		host:       defaultHost,
+		httpClient: &http.Client{Timeout: 150 * time.Second},
+	}, nil
+}
+
+func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
+	if key == "" {
+		return nil, ErrBadAPIKey
+	}
+	if !verifySSL {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	return &Client{
+		key:        key,
+		host:       host,
+		httpClient: &http.Client{Timeout: 150 * time.Second},
+	}, nil
+}
+
+func (c *Client) APIKey() string {
+	return c.key
+}
+
+func (c *Client) SetAPIKey(key string) {
+	c.key = key
+}
+
+func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error) {
+	endpointURL, _ := url.Parse(c.host + "/account")
+	params := url.Values{}
+	params.Set("key", c.key)
+	endpointURL.RawQuery = params.Encode()
+
+	req, err := http.NewRequest("GET", endpointURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusOK {
+		return &VerifyAPIKeyResult{Valid: true}, nil
+	}
+	return &VerifyAPIKeyResult{Valid: false}, nil
+}
+
+func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
+	DefaultLogger.Debug("scraping", "url", config.URL)
+
+	if err := config.processBody(); err != nil {
+		return nil, err
+	}
+	params, err := config.toAPIParams()
+	if err != nil {
+		return nil, err
+	}
+	params.Set("key", c.key)
+
+	endpointURL, _ := url.Parse(c.host + "/scrape")
+	endpointURL.RawQuery = params.Encode()
+
+	method := "GET"
+	if config.Method != "" {
+		method = strings.ToUpper(config.Method)
+	}
+
+	req, err := http.NewRequest(method, endpointURL.String(), strings.NewReader(config.Body))
+	if err != nil {
+		return nil, err
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(config.Body)), nil
+	}
+	for key, value := range config.Headers {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
+	}
+
+	var result ScrapeResult
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal scrape result: %w", err)
+	}
+	if result.Result.Success && result.Result.Status == "DONE" {
+		DefaultLogger.Debug("scrape log url:", result.Result.LogURL)
+		return &result, nil
+	}
+	return nil, c.createErrorFromResult(&result)
+}
+
+func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan struct {
+	*ScrapeResult
+	error
+} {
+	resultsChan := make(chan struct {
+		*ScrapeResult
+		error
+	}, len(configs))
+
+	var wg sync.WaitGroup
+
+	if concurrencyLimit <= 0 {
+		account, err := c.Account()
+		if err != nil {
+			resultsChan <- struct {
+				*ScrapeResult
+				error
+			}{nil, fmt.Errorf("failed to get account for concurrency limit: %w", err)}
+			close(resultsChan)
+			return resultsChan
+		}
+		concurrencyLimit = account.Subscription.Usage.Scrape.ConcurrentLimit
+		DefaultLogger.Info("concurrency not provided - setting it to", concurrencyLimit, "from account info")
+	}
+
+	jobs := make(chan *ScrapeConfig, len(configs))
+	for i := 0; i < concurrencyLimit; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for config := range jobs {
+				result, err := c.Scrape(config)
+				resultsChan <- struct {
+					*ScrapeResult
+					error
+				}{result, err}
+			}
+		}()
+	}
+
+	for _, config := range configs {
+		jobs <- config
+	}
+	close(jobs)
+
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	return resultsChan
+}
+
+func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error) {
+	params, err := config.toAPIParams()
+	if err != nil {
+		return nil, err
+	}
+	params.Set("key", c.key)
+
+	endpointURL, _ := url.Parse(c.host + "/screenshot")
+	endpointURL.RawQuery = params.Encode()
+
+	req, err := http.NewRequest("GET", endpointURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
+	}
+
+	return newScreenshotResult(resp, bodyBytes)
+}
+
+func (c *Client) SaveScreenshot(result *ScreenshotResult, name string, savePath ...string) (string, error) {
+	if len(result.Image) == 0 {
+		return "", fmt.Errorf("screenshot image is empty")
+	}
+	dir := "."
+	if len(savePath) > 0 {
+		dir = savePath[0]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(dir, fmt.Sprintf("%s.%s", name, result.Metadata.ExtensionName))
+	err := os.WriteFile(filePath, result.Image, 0644)
+	return filePath, err
+}
+
+func (c *Client) Extract(config *ExtractionConfig) (*ExtractionResult, error) {
+	params, err := config.toAPIParams()
+	if err != nil {
+		return nil, err
+	}
+	params.Set("key", c.key)
+
+	endpointURL, _ := url.Parse(c.host + "/extraction")
+	endpointURL.RawQuery = params.Encode()
+
+	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(config.Body))
+	if err != nil {
+		return nil, err
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(config.Body)), nil
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Content-Type", config.ContentType)
+	req.Header.Set("Accept", "application/json")
+	if config.DocumentCompressionFormat != "" {
+		req.Header.Set("Content-Encoding", string(config.DocumentCompressionFormat))
+	}
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
+	}
+
+	var result ExtractionResult
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal extraction result: %w", err)
+	}
+	return &result, nil
+}
+
+func (c *Client) Account() (*AccountData, error) {
+	endpointURL, _ := url.Parse(c.host + "/account")
+	params := url.Values{}
+	params.Set("key", c.key)
+	endpointURL.RawQuery = params.Encode()
+
+	req, err := http.NewRequest("GET", endpointURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
+	}
+
+	var data AccountData
+	if err := json.Unmarshal(bodyBytes, &data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal account data: %w", err)
+	}
+	return &data, nil
+}
+
+func (c *Client) handleAPIErrorResponse(resp *http.Response, body []byte) error {
+	statusCode := resp.StatusCode
+
+	var result ScrapeResult
+	if err := json.Unmarshal(body, &result); err == nil {
+		if result.Result.Error != nil {
+			apiErr := &APIError{
+				APIResponse:    &result,
+				HTTPStatusCode: resp.StatusCode,
+			}
+			if result.Result.Error != nil {
+				apiErr.Message = result.Result.Error.Message
+				apiErr.Code = result.Result.Error.Code
+				apiErr.DocumentationURL = result.Result.Error.DocURL
+			} else {
+				apiErr.Message = "scrape failed with status: " + result.Result.Status
+				apiErr.Code = result.Result.Status
+			}
+			return apiErr
+		}
+	}
+
+	var errResp errorResponse
+	_ = json.Unmarshal(body, &errResp)
+	msg := errResp.Message
+	if msg == "" {
+		msg = fmt.Sprintf("API returned status %d", statusCode)
+	}
+
+	apiErr := &APIError{
+		Message:        msg,
+		HTTPStatusCode: statusCode,
+		Code:           errResp.Code,
+	}
+
+	// Retry-After parsing (seconds or HTTP-date)
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil && secs >= 0 {
+			apiErr.RetryAfterMs = secs * 1000
+		} else if t, err := http.ParseTime(ra); err == nil {
+			ms := int(time.Until(t).Milliseconds())
+			if ms < 0 {
+				ms = 0
+			}
+			apiErr.RetryAfterMs = ms
+		}
+	}
+
+	switch statusCode {
+	case http.StatusUnauthorized:
+		apiErr.Hint = "Provide a valid API key via ?key=... or Bearer token (cloud mode)."
+	case http.StatusTooManyRequests:
+		apiErr.Hint = "Back off and retry after the indicated delay, or reduce concurrency/scope."
+	case http.StatusUnprocessableEntity:
+		if strings.Contains(string(body), "SCREENSHOT") {
+			apiErr.Hint = "Check screenshot parameters (format/capture/resolution) and upstream site readiness."
+		}
+		if strings.Contains(string(body), "EXTRACTION") {
+			apiErr.Hint = "Check content_type, body encoding, and template/prompt validity."
+		}
+	}
+
+	return apiErr
+}
+
+func (c *Client) createErrorFromResult(result *ScrapeResult) error {
+	apiErr := &APIError{
+		APIResponse:    result,
+		HTTPStatusCode: result.Result.StatusCode,
+	}
+	if result.Result.Error != nil {
+		apiErr.Message = result.Result.Error.Message
+		apiErr.Code = result.Result.Error.Code
+		apiErr.DocumentationURL = result.Result.Error.DocURL
+	} else {
+		apiErr.Message = "scrape failed with status: " + result.Result.Status
+		apiErr.Code = result.Result.Status
+	}
+
+	if !result.Result.Success {
+		if result.Result.StatusCode >= 400 && result.Result.StatusCode < 500 {
+			return fmt.Errorf("%w: %s", ErrUpstreamClient, apiErr)
+		}
+		if result.Result.StatusCode >= 500 {
+			return fmt.Errorf("%w: %s", ErrUpstreamServer, apiErr)
+		}
+	}
+
+	if parts := strings.Split(result.Result.Status, "::"); len(parts) > 1 {
+		resource := parts[1]
+		switch resource {
+		case "SCRAPE":
+			return fmt.Errorf("%w: %s", ErrScrapeFailed, apiErr)
+		case "PROXY":
+			return fmt.Errorf("%w: %s", ErrProxyFailed, apiErr)
+		case "ASP":
+			return fmt.Errorf("%w: %s", ErrASPBypassFailed, apiErr)
+		case "SCHEDULE":
+			return fmt.Errorf("%w: %s", ErrScheduleFailed, apiErr)
+		case "WEBHOOK":
+			return fmt.Errorf("%w: %s", ErrWebhookFailed, apiErr)
+		case "SESSION":
+			return fmt.Errorf("%w: %s", ErrSessionFailed, apiErr)
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrUnhandledAPIResponse, apiErr)
+}
