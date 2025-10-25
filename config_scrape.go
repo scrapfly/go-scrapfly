@@ -46,6 +46,8 @@ const (
 	OnlyContent FormatOption = "only_content"
 )
 
+type JSScenarioStep map[string]interface{}
+
 // ScrapeConfig holds all the parameters for a scrape request.
 type ScrapeConfig struct {
 	URL                         string
@@ -83,7 +85,7 @@ type ScrapeConfig struct {
 	Screenshots                 map[string]string
 	ScreenshotFlags             []ScreenshotFlag
 	JS                          string
-	JSScenario                  []map[string]interface{}
+	JSScenario                  []JSScenarioStep
 	OS                          string
 	Lang                        []string
 }
