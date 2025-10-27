@@ -165,7 +165,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 
 	method := "GET"
 	if config.Method != "" {
-		method = strings.ToUpper(config.Method)
+		method = strings.ToUpper(config.Method.String())
 	}
 
 	req, err := http.NewRequest(method, endpointURL.String(), strings.NewReader(config.Body))

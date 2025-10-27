@@ -9,64 +9,6 @@ import (
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
 )
 
-// ProxyPool represents the type of proxy pool to use for scraping.
-type ProxyPool string
-
-// Available proxy pool types for Scrapfly API requests.
-const (
-	// PublicDataCenterPool uses datacenter proxies. Fast and reliable but easier to detect.
-	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
-	// PublicResidentialPool uses residential proxies. More expensive but harder to detect.
-	PublicResidentialPool ProxyPool = "public_residential_pool"
-)
-
-// ScreenshotFlag defines options for screenshot behavior when using Screenshots parameter.
-type ScreenshotFlag string
-
-// Available screenshot flags for customizing screenshot capture.
-const (
-	// LoadImages enables image loading for screenshots (disabled by default for performance).
-	LoadImages ScreenshotFlag = "load_images"
-	// DarkMode enables dark mode rendering.
-	DarkMode ScreenshotFlag = "dark_mode"
-	// BlockBanners blocks cookie banners and similar overlays.
-	BlockBanners ScreenshotFlag = "block_banners"
-	// PrintMediaFormat uses print media CSS for rendering.
-	PrintMediaFormat ScreenshotFlag = "print_media_format"
-	// HighQuality captures screenshots at higher quality settings.
-	HighQuality ScreenshotFlag = "high_quality"
-)
-
-// Format defines the format for the scraped content response.
-type Format string
-
-// Available content formats for scrape responses.
-const (
-	// FormatJSON returns content structured as JSON.
-	FormatJSON Format = "json"
-	// FormatText returns plain text content with HTML tags stripped.
-	FormatText Format = "text"
-	// FormatMarkdown converts HTML to Markdown format.
-	FormatMarkdown Format = "markdown"
-	// FormatCleanHTML returns cleaned and normalized HTML.
-	FormatCleanHTML Format = "clean_html"
-	// FormatRaw returns the raw HTML content without any processing.
-	FormatRaw Format = "raw"
-)
-
-// FormatOption defines additional options for content formatting.
-type FormatOption string
-
-// Available format options that can be combined with Format settings.
-const (
-	// NoLinks removes all links from the formatted content.
-	NoLinks FormatOption = "no_links"
-	// NoImages removes all images from the formatted content.
-	NoImages FormatOption = "no_images"
-	// OnlyContent extracts only the main content, removing headers, footers, and navigation.
-	OnlyContent FormatOption = "only_content"
-)
-
 // ScrapeConfig configures a web scraping request to the Scrapfly API.
 //
 // This struct contains all available options for customizing scraping behavior,
@@ -86,7 +28,7 @@ type ScrapeConfig struct {
 	// URL is the target URL to scrape (required).
 	URL string
 	// Method is the HTTP method to use (GET, POST, PUT, PATCH). Defaults to GET.
-	Method string
+	Method HttpMethod
 	// Body is the raw request body for POST/PUT/PATCH requests.
 	Body string
 	// Data is a map that will be encoded as request body based on Content-Type.
@@ -202,13 +144,18 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 		}
 		if len(c.Screenshots) > 0 {
 			for name, value := range c.Screenshots {
+				if value == "" {
+					return nil, fmt.Errorf("%w: screenshots[%s] require either a selector or fullpage", ErrScrapeConfig, name)
+				}
 				params.Set(fmt.Sprintf("screenshots[%s]", name), value)
 			}
 		}
 		if len(c.ScreenshotFlags) > 0 {
 			var flags []string
 			for _, flag := range c.ScreenshotFlags {
-				flags = append(flags, string(flag))
+				if flag.IsValid() {
+					flags = append(flags, string(flag))
+				}
 			}
 			params.Set("screenshot_flags", strings.Join(flags, ","))
 		}
@@ -267,10 +214,16 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 	}
 
 	if c.Format != "" {
-		formatVal := string(c.Format)
+		if !c.Format.IsValid() {
+			return nil, fmt.Errorf("%w: invalid format: %s", ErrScrapeConfig, c.Format)
+		}
+		formatVal := c.Format.String()
 		if len(c.FormatOptions) > 0 {
 			var opts []string
 			for _, opt := range c.FormatOptions {
+				if !opt.IsValid() {
+					return nil, fmt.Errorf("%w: invalid format option: %s", ErrScrapeConfig, opt)
+				}
 				opts = append(opts, string(opt))
 			}
 			formatVal += ":" + strings.Join(opts, ",")
@@ -299,16 +252,29 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 	}
 
 	for key, value := range c.Headers {
+		if key == "" || value == "" {
+			return nil, fmt.Errorf("%w: headers key and value cannot be empty, found key: %s, value: %s", ErrScrapeConfig, key, value)
+		}
 		params.Set(fmt.Sprintf("headers[%s]", strings.ToLower(key)), value)
 	}
+
 	if len(c.Cookies) > 0 {
 		var cookieParts []string
 		for name, value := range c.Cookies {
+			if name == "" || value == "" {
+				return nil, fmt.Errorf("%w: cookies name and value cannot be empty, found name: %s, value: %s", ErrScrapeConfig, name, value)
+			}
 			cookieParts = append(cookieParts, fmt.Sprintf("%s=%s", name, value))
 		}
 		cookieHeader := strings.Join(cookieParts, "; ")
 
-		if existingCookie, ok := c.Headers["cookie"]; ok {
+		existingCookie := ""
+		for k, v := range c.Headers {
+			if strings.ToLower(k) == "cookie" {
+				existingCookie = v
+			}
+		}
+		if existingCookie != "" {
 			params.Set("headers[cookie]", existingCookie+"; "+cookieHeader)
 		} else {
 			params.Set("headers[cookie]", cookieHeader)
@@ -322,7 +288,7 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 // It converts the Data map to the appropriate body format based on Content-Type.
 // This is an internal method used during request preparation.
 func (c *ScrapeConfig) processBody() error {
-	method := strings.ToUpper(c.Method)
+	method := strings.ToUpper(c.Method.String())
 	if method != "POST" && method != "PUT" && method != "PATCH" {
 		return nil
 	}
