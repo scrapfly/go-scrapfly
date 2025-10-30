@@ -286,9 +286,14 @@ type IFrame struct {
 
 // Screenshot represents a screenshot captured during rendering.
 type Screenshot struct {
+	// CSSSelector is the CSS selector of the element to capture. If Format == fullpage, this will be nil
 	CSSSelector *string `json:"css_selector"`
-	Extension   string  `json:"extension"`
-	Format      string  `json:"format"`
-	Size        int     `json:"size"`
-	URL         string  `json:"url"`
+	// Extension is the file extension (jpg, png, webp, gif)
+	Extension string `json:"extension"` // Always jpg when request from scraping api.
+	// Format is the format of the screenshot (fullpage, element)
+	Format string `json:"format"`
+	// Size is the size of the screenshot in bytes
+	Size int `json:"size"`
+	// URL is the URL to retrieve the screenshot from (this doest NOT include api key)
+	URL string `json:"url"`
 }
