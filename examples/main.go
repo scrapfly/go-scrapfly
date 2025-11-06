@@ -347,6 +347,15 @@ func downloadFile(apiKey string) {
 	fmt.Println("attachments:")
 	attachmentsJSON, _ := json.MarshalIndent(scrapeResult.Result.BrowserData.Attachments, "", "  ")
 	fmt.Println(string(attachmentsJSON))
+
+	// use the shortcut to save attachments to file:
+	paths, err := scrapeResult.SaveAttachments("./tests_output")
+	if err != nil {
+		log.Fatalf("failed to save attachments: %v", err)
+	}
+	for _, path := range paths {
+		fmt.Printf("Attachment saved to: %s\n", path)
+	}
 }
 
 func main() {

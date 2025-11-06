@@ -339,6 +339,15 @@ func Example_downloadFile() {
 	fmt.Println("attachments:")
 	attachmentsJSON, _ := json.MarshalIndent(scrapeResult.Result.BrowserData.Attachments, "", "  ")
 	fmt.Println(string(attachmentsJSON))
+
+	// use the shortcut to save attachments to file:
+	paths, err := scrapeResult.SaveAttachments("./tests_output")
+	if err != nil {
+		log.Fatalf("failed to save attachments: %v", err)
+	}
+	for _, path := range paths {
+		fmt.Printf("Attachment saved to: %s\n", path)
+	}
 	// Output: scrapfly: 2025/11/06 18:30:41 [DEBUG] scraping url https://web-scraping.dev/file-download
 	// scrapfly: 2025/11/06 18:30:55 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 	// attachments:
@@ -354,7 +363,7 @@ func Example_downloadFile() {
 	//     "url": "https://web-scraping.dev/api/download-file"
 	//   }
 	// ]
-
+	// Attachment saved to: tests_output/download-sample.pdf
 }
 
 // jsRender demonstrates JavaScript rendering with scenarios
@@ -716,7 +725,7 @@ func Example_extractionTemplates() {
 }
 
 // screenshot demonstrates capturing screenshots
-func ExampleScreenshot() {
+func Example_screenshot() {
 	apiKey := getApiKey()
 
 	client, err := scrapfly.New(apiKey)
