@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -202,6 +200,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 	if result.Result.Success && result.Result.Status == "DONE" {
 		DefaultLogger.Debug("scrape log url:", result.Result.LogURL)
 
+		// handle large objects (clob/blob formats)
 		contentFormat := result.Result.Format
 		if contentFormat == "clob" || contentFormat == "blob" {
 			newContent, newFormat, err := c.handleLargeObjects(result.Result.Content, contentFormat)
@@ -211,6 +210,36 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 			result.Result.Content = newContent
 			result.Result.Format = newFormat
 		}
+		/////////////////////////////////////////
+
+		// Add back apiKey to screenshots URLs
+		for name, screenshot := range result.Result.Screenshots {
+			newScreenshot := Screenshot{
+				URL:         screenshot.URL + "?key=" + c.key,
+				Extension:   screenshot.Extension,
+				Format:      screenshot.Format,
+				Size:        screenshot.Size,
+				CSSSelector: screenshot.CSSSelector,
+				Name:        name,
+			}
+			result.Result.Screenshots[name] = newScreenshot
+		}
+
+		// Add back apiKey to attachments URLs
+		for i, attachment := range result.Result.BrowserData.Attachments {
+			newAttachment := Attachment{
+				Content:           attachment.Content + "?key=" + c.key,
+				ContentType:       attachment.ContentType,
+				Filename:          attachment.Filename,
+				ID:                attachment.ID,
+				Size:              attachment.Size,
+				State:             attachment.State,
+				SuggestedFilename: attachment.SuggestedFilename,
+				URL:               attachment.URL,
+			}
+			result.Result.BrowserData.Attachments[i] = newAttachment
+		}
+		/////////////////////////////////////////
 
 		return &result, nil
 	}
@@ -397,42 +426,6 @@ func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error)
 	}
 
 	return newScreenshotResult(resp, bodyBytes)
-}
-
-// SaveScreenshot saves a screenshot result to disk.
-//
-// Parameters:
-//   - result: The ScreenshotResult obtained from Screenshot()
-//   - name: The base name for the file (without extension)
-//   - savePath: Optional directory path where to save the file (defaults to current directory)
-//
-// Returns the full path to the saved file.
-//
-// Example:
-//
-//	result, err := client.Screenshot(config)
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	filePath, err := client.SaveScreenshot(result, "example", "./screenshots")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	fmt.Printf("Screenshot saved to: %s\n", filePath)
-func (c *Client) SaveScreenshot(result *ScreenshotResult, name string, savePath ...string) (string, error) {
-	if len(result.Image) == 0 {
-		return "", fmt.Errorf("screenshot image is empty")
-	}
-	dir := "."
-	if len(savePath) > 0 {
-		dir = savePath[0]
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-	filePath := filepath.Join(dir, fmt.Sprintf("%s.%s", name, result.Metadata.ExtensionName))
-	err := os.WriteFile(filePath, result.Image, 0644)
-	return filePath, err
 }
 
 // Extract performs AI-powered structured data extraction from HTML content.

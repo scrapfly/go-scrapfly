@@ -2,6 +2,10 @@ package scrapfly
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -262,6 +266,8 @@ type Attachment struct {
 	State             string `json:"state"`
 	SuggestedFilename string `json:"suggested_filename"`
 	URL               string `json:"url"`
+
+	data []byte
 }
 
 // Cookie represents an HTTP cookie.
@@ -306,6 +312,173 @@ type Screenshot struct {
 	Format string `json:"format"`
 	// Size is the size of the screenshot in bytes
 	Size int `json:"size"`
-	// URL is the URL to retrieve the screenshot from (this doest NOT include api key)
+	// URL is the URL to retrieve the screenshot from
 	URL string `json:"url"`
+
+	// Name is the name of the screenshot retrieved from the API response
+	Name string `json:"-"`
+
+	image []byte
+}
+
+// Image returns the screenshot data as a byte slice.
+func (s *Screenshot) Image() ([]byte, error) {
+	if s.image != nil {
+		return s.image, nil
+	}
+	resp, err := http.Get(s.URL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	s.image, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return s.image, nil
+}
+
+// Data returns the attachment data as a byte slice.
+func (a *Attachment) Data() ([]byte, error) {
+	if a.data != nil {
+		return a.data, nil
+	}
+	resp, err := http.Get(a.Content)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	a.data, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return a.data, nil
+}
+
+// Save saves a scraped attachment result to disk.
+//
+// Parameters:
+//   - savePath: Optional directory path where to save the file (defaults to current directory)
+//     (if savePath does not exists, it will be created in a best effort basis)
+//
+// it is named as the filename of the attachment
+// Returns the full path to the saved file.
+//
+// Example:
+//
+//	filePath, err := a.Save("./attachments")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Attachment %s saved to: %s\n", a.Filename, filePath)
+func (a *Attachment) Save(savePath ...string) (string, error) {
+	if a.data == nil {
+		_, err := a.Data()
+		if err != nil {
+			return "", err
+		}
+	}
+	dir := "."
+	if len(savePath) > 0 {
+		dir = savePath[0]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(dir, fmt.Sprintf("%s", a.Filename))
+	err := os.WriteFile(filePath, a.data, 0644)
+	return filePath, err
+}
+
+// Save saves a scraped screenshot result to disk.
+//
+// Parameters:
+//   - savePath: Optional directory path where to save the file (defaults to current directory)
+//     (if savePath does not exists, it will be created in a best effort basis)
+//
+// it is named as the name of the screenshot as set in config and retrieved from the API response
+// Returns the full path to the saved file.
+//
+// Example:
+//
+//	filePath, err := s.Save("./screenshots")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Screenshot saved to: %s\n", filePath)
+func (s *Screenshot) Save(savePath ...string) (string, error) {
+	if s.image == nil {
+		_, err := s.Image()
+		if err != nil {
+			return "", err
+		}
+	}
+	dir := "."
+	if len(savePath) > 0 {
+		dir = savePath[0]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(dir, fmt.Sprintf("%s.%s", s.Name, s.Extension))
+	err := os.WriteFile(filePath, s.image, 0644)
+	return filePath, err
+}
+
+// SaveScreenshots is a shortcut to save all screenshots to disk
+//
+// Parameters:
+//   - savePath: Optional directory path where to save the files (defaults to current directory)
+//     (if savePath does not exists, it will be created in a best effort basis)
+//
+// Returns the full paths to the saved files.
+//
+// Example:
+//
+//	paths, err := r.SaveScreenshots("./screenshots")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, path := range paths {
+//		fmt.Printf("Screenshot saved to: %s\n", path)
+//	}
+func (r *ScrapeResult) SaveScreenshots(savePath ...string) ([]string, error) {
+	paths := []string{}
+	for _, screenshot := range r.Result.Screenshots {
+		filePath, err := screenshot.Save(savePath...)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, filePath)
+	}
+	return paths, nil
+}
+
+// SaveAttachments is a shortcut to save all attachments to disk
+//
+// Parameters:
+//   - savePath: Optional directory path where to save the files (defaults to current directory)
+//     (if savePath does not exists, it will be created in a best effort basis)
+//
+// Returns the full paths to the saved files.
+//
+// Example:
+//
+//	paths, err := r.SaveAttachments("./attachments")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	for _, path := range paths {
+//		fmt.Printf("Attachment saved to: %s\n", path)
+//	}
+func (r *ScrapeResult) SaveAttachments(savePath ...string) ([]string, error) {
+	paths := []string{}
+	for _, attachment := range r.Result.BrowserData.Attachments {
+		filePath, err := attachment.Save(savePath...)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, filePath)
+	}
+	return paths, nil
 }

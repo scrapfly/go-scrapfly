@@ -1,7 +1,10 @@
 package scrapfly
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -43,4 +46,35 @@ func newScreenshotResult(resp *http.Response, data []byte) (*ScreenshotResult, e
 			UpstreamURL:        resp.Header.Get("x-scrapfly-upstream-url"),
 		},
 	}, nil
+}
+
+// Save saves a screenshot result to disk.
+//
+// Parameters:
+//   - name: The base name for the file (without extension)
+//   - savePath: Optional directory path where to save the file (defaults to current directory)
+//
+// Returns the full path to the saved file.
+//
+// Example:
+//
+//	filePath, err := s.Save("example", "./screenshots")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	fmt.Printf("Screenshot saved to: %s\n", filePath)
+func (s *ScreenshotResult) Save(name string, savePath ...string) (string, error) {
+	if len(s.Image) == 0 {
+		return "", fmt.Errorf("screenshot image is empty")
+	}
+	dir := "."
+	if len(savePath) > 0 {
+		dir = savePath[0]
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	filePath := filepath.Join(dir, fmt.Sprintf("%s.%s", name, s.Metadata.ExtensionName))
+	err := os.WriteFile(filePath, s.Image, 0644)
+	return filePath, err
 }

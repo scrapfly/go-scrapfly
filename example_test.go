@@ -746,7 +746,7 @@ func ExampleScreenshot() {
 	fmt.Printf("Format: %s, Size: %d bytes\n", screenshotResult.Metadata.ExtensionName, len(screenshotResult.Image))
 
 	// use the shortcut to save screenshots to file:
-	filePath, err := client.SaveScreenshot(screenshotResult, "screenshot")
+	filePath, err := screenshotResult.Save("screenshot")
 	if err != nil {
 		log.Fatalf("failed to save screenshot: %v", err)
 	}
