@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
@@ -26,7 +27,7 @@ import (
 //	}
 type ScrapeConfig struct {
 	// URL is the target URL to scrape (required).
-	URL string
+	URL string `required:"true"`
 	// Method is the HTTP method to use (GET, POST, PUT, PATCH). Defaults to GET.
 	Method HttpMethod
 	// Body is the raw request body for POST/PUT/PATCH requests.
@@ -39,6 +40,7 @@ type ScrapeConfig struct {
 	// Cookies are cookies to include in the request.
 	Cookies map[string]string
 	// Country specifies the proxy country code (e.g., "us", "uk", "de").
+	// Supports ISO 3166-1 alpha-2 country codes.
 	Country string
 	// ProxyPool specifies which proxy pool to use.
 	ProxyPool ProxyPool
@@ -73,17 +75,21 @@ type ScrapeConfig struct {
 	// CorrelationID is a custom ID for tracking requests across systems.
 	CorrelationID string
 	// Format specifies the output format for the scraped content.
-	Format Format
+	Format Format `validate:"enum"`
 	// FormatOptions are additional options for the content format.
-	FormatOptions []FormatOption
+	FormatOptions []FormatOption `validate:"enum"`
 	// ExtractionTemplate is the name of a saved extraction template.
-	ExtractionTemplate string
+	// it is exclusve with other extraction options
+	ExtractionTemplate string `exclusive:"extraction"`
 	// ExtractionEphemeralTemplate is an inline extraction template definition.
-	ExtractionEphemeralTemplate map[string]interface{}
+	// it is exclusve with other extraction options
+	ExtractionEphemeralTemplate map[string]interface{} `exclusive:"extraction"`
 	// ExtractionPrompt is an AI prompt for extracting structured data.
-	ExtractionPrompt string
+	// it is exclusve with other extraction options
+	ExtractionPrompt string `exclusive:"extraction"`
 	// ExtractionModel specifies which AI model to use for extraction.
-	ExtractionModel string
+	// it is exclusve with other extraction options
+	ExtractionModel ExtractionModel `exclusive:"extraction" validate:"enum"`
 	// WaitForSelector waits for a CSS selector to appear before capturing (requires RenderJS).
 	WaitForSelector string
 	// RenderingWait is additional wait time in milliseconds after page load (requires RenderJS).
@@ -93,7 +99,7 @@ type ScrapeConfig struct {
 	// Screenshots is a map of screenshot names to CSS selectors (requires RenderJS).
 	Screenshots map[string]string
 	// ScreenshotFlags are options for screenshot capture.
-	ScreenshotFlags []ScreenshotFlag
+	ScreenshotFlags []ScreenshotFlag `validate:"enum"`
 	// JS is custom JavaScript code to execute in the browser (requires RenderJS).
 	JS string
 	// JSScenario is a sequence of browser actions to perform (requires RenderJS).
@@ -104,19 +110,143 @@ type ScrapeConfig struct {
 	Lang []string
 }
 
-// toAPIParams converts the ScrapeConfig into URL parameters for the Scrapfly API.
+// processBody handles the Data and Body fields for POST/PUT/PATCH requests.
+// It converts the Data map to the appropriate body format based on Content-Type.
+// This is an internal method used during request preparation.
+func (c *ScrapeConfig) processBody() error {
+	method := strings.ToUpper(c.Method.String())
+	if method != "POST" && method != "PUT" && method != "PATCH" {
+		return nil
+	}
+
+	if c.Body != "" && c.Data != nil {
+		return fmt.Errorf("%w: cannot set both Body and Data", ErrScrapeConfig)
+	}
+
+	if c.Data != nil {
+		contentType, ok := c.Headers["content-type"]
+		if !ok {
+			contentType = "application/x-www-form-urlencoded"
+			if c.Headers == nil {
+				c.Headers = make(map[string]string)
+			}
+			c.Headers["content-type"] = contentType
+		}
+
+		switch {
+		case strings.Contains(contentType, "application/json"):
+			jsonData, err := json.Marshal(c.Data)
+			if err != nil {
+				return err
+			}
+			c.Body = string(jsonData)
+		case strings.Contains(contentType, "application/x-www-form-urlencoded"):
+			values := url.Values{}
+			for k, v := range c.Data {
+				values.Set(k, fmt.Sprint(v))
+			}
+			c.Body = values.Encode()
+		default:
+			return fmt.Errorf("%w: unsupported content-type for Data field: %s. Use Body field instead", ErrScrapeConfig, contentType)
+		}
+	}
+
+	if c.Body != "" {
+		if _, ok := c.Headers["content-type"]; !ok {
+			if c.Headers == nil {
+				c.Headers = make(map[string]string)
+			}
+			c.Headers["content-type"] = "text/plain"
+		}
+	}
+	return nil
+}
+
+var countryRegex = regexp.MustCompile("^([a-zA-Z]{2}|)$")
+
+func (c *ScrapeConfig) validateConfig() error {
+
+	// validate exclusive fields, see struct tags
+	if err := ValidateExclusiveFields(c); err != nil {
+		return err
+	}
+	// validate required fields, see struct tags
+	if err := ValidateRequiredFields(c); err != nil {
+		return err
+	}
+	// validate enums, see struct tags
+	if err := ValidateEnums(c); err != nil {
+		return err
+	}
+
+	// validate country code
+	// "^([a-zA-Z]{2}|)$" regex
+	if c.Country != "" {
+		country := strings.ToLower(c.Country)
+		if !countryRegex.MatchString(country) {
+			return fmt.Errorf("%w: invalid country code (ISO 3166-1 alpha-2): %s", ErrScrapeConfig, country)
+		}
+	}
+
+	if c.RenderJS {
+
+		if len(c.JSScenario) > 0 {
+			if _, err := json.Marshal(c.JSScenario); err != nil {
+				return fmt.Errorf("failed to marshal js_scenario: %w", err)
+			}
+		}
+		if len(c.Screenshots) > 0 {
+			for name, value := range c.Screenshots {
+				if value == "" {
+					return fmt.Errorf("%w: screenshots[%s] require either a selector or fullpage", ErrScrapeConfig, name)
+				}
+			}
+		}
+
+	}
+
+	if c.ExtractionEphemeralTemplate != nil {
+		_, err := json.Marshal(c.ExtractionEphemeralTemplate)
+		if err != nil {
+			return fmt.Errorf("failed to marshal extraction_ephemeral_template: %w", err)
+		}
+	}
+
+	for key, value := range c.Headers {
+		if key == "" || value == "" {
+			return fmt.Errorf("%w: headers key and value cannot be empty, found key: %s, value: %s", ErrScrapeConfig, key, value)
+		}
+	}
+
+	if len(c.Cookies) > 0 {
+		for name, value := range c.Cookies {
+			if name == "" || value == "" {
+				return fmt.Errorf("%w: cookies name and value cannot be empty, found name: %s, value: %s", ErrScrapeConfig, name, value)
+			}
+		}
+	}
+
+	return nil
+}
+
+// toAPIParamsWithValidation converts the ScrapeConfig into URL parameters for the Scrapfly API.
 // This is an internal method used by the Client to prepare API requests.
-func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
+func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
+
+	// validate exclusive fields, see struct tags
+	if err := c.validateConfig(); err != nil {
+		return nil, err
+	}
+
 	params := url.Values{}
 
-	if c.URL == "" {
-		return nil, fmt.Errorf("%w: URL is required", ErrScrapeConfig)
-	}
 	params.Set("url", c.URL)
 
 	if c.Country != "" {
-		params.Set("country", c.Country)
+		country := strings.ToLower(c.Country)
+		params.Set("country", country)
 	}
+
 	if c.ProxyPool != "" {
 		params.Set("proxy_pool", string(c.ProxyPool))
 	}
@@ -136,26 +266,18 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 			params.Set("js", urlSafeB64Encode(c.JS))
 		}
 		if len(c.JSScenario) > 0 {
-			scenarioJSON, err := json.Marshal(c.JSScenario)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal js_scenario: %w", err)
-			}
+			scenarioJSON, _ := json.Marshal(c.JSScenario)
 			params.Set("js_scenario", urlSafeB64Encode(string(scenarioJSON)))
 		}
 		if len(c.Screenshots) > 0 {
 			for name, value := range c.Screenshots {
-				if value == "" {
-					return nil, fmt.Errorf("%w: screenshots[%s] require either a selector or fullpage", ErrScrapeConfig, name)
-				}
 				params.Set(fmt.Sprintf("screenshots[%s]", name), value)
 			}
 		}
 		if len(c.ScreenshotFlags) > 0 {
 			var flags []string
 			for _, flag := range c.ScreenshotFlags {
-				if flag.IsValid() {
-					flags = append(flags, string(flag))
-				}
+				flags = append(flags, string(flag))
 			}
 			params.Set("screenshot_flags", strings.Join(flags, ","))
 		}
@@ -214,16 +336,10 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 	}
 
 	if c.Format != "" {
-		if !c.Format.IsValid() {
-			return nil, fmt.Errorf("%w: invalid format: %s", ErrScrapeConfig, c.Format)
-		}
 		formatVal := c.Format.String()
 		if len(c.FormatOptions) > 0 {
 			var opts []string
 			for _, opt := range c.FormatOptions {
-				if !opt.IsValid() {
-					return nil, fmt.Errorf("%w: invalid format option: %s", ErrScrapeConfig, opt)
-				}
 				opts = append(opts, string(opt))
 			}
 			formatVal += ":" + strings.Join(opts, ",")
@@ -231,39 +347,24 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 		params.Set("format", formatVal)
 	}
 
-	if c.ExtractionTemplate != "" && c.ExtractionEphemeralTemplate != nil {
-		return nil, fmt.Errorf("%w: cannot use both extraction_template and extraction_ephemeral_template", ErrScrapeConfig)
-	}
 	if c.ExtractionTemplate != "" {
 		params.Set("extraction_template", c.ExtractionTemplate)
-	}
-	if c.ExtractionEphemeralTemplate != nil {
-		templateJSON, err := json.Marshal(c.ExtractionEphemeralTemplate)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal extraction_ephemeral_template: %w", err)
-		}
+	} else if c.ExtractionEphemeralTemplate != nil {
+		templateJSON, _ := json.Marshal(c.ExtractionEphemeralTemplate)
 		params.Set("extraction_template", "ephemeral:"+urlSafeB64Encode(string(templateJSON)))
-	}
-	if c.ExtractionPrompt != "" {
+	} else if c.ExtractionPrompt != "" {
 		params.Set("extraction_prompt", c.ExtractionPrompt)
-	}
-	if c.ExtractionModel != "" {
-		params.Set("extraction_model", c.ExtractionModel)
+	} else if c.ExtractionModel != "" {
+		params.Set("extraction_model", string(c.ExtractionModel))
 	}
 
 	for key, value := range c.Headers {
-		if key == "" || value == "" {
-			return nil, fmt.Errorf("%w: headers key and value cannot be empty, found key: %s, value: %s", ErrScrapeConfig, key, value)
-		}
 		params.Set(fmt.Sprintf("headers[%s]", strings.ToLower(key)), value)
 	}
 
 	if len(c.Cookies) > 0 {
 		var cookieParts []string
 		for name, value := range c.Cookies {
-			if name == "" || value == "" {
-				return nil, fmt.Errorf("%w: cookies name and value cannot be empty, found name: %s, value: %s", ErrScrapeConfig, name, value)
-			}
 			cookieParts = append(cookieParts, fmt.Sprintf("%s=%s", name, value))
 		}
 		cookieHeader := strings.Join(cookieParts, "; ")
@@ -282,56 +383,4 @@ func (c *ScrapeConfig) toAPIParams() (url.Values, error) {
 	}
 
 	return params, nil
-}
-
-// processBody handles the Data and Body fields for POST/PUT/PATCH requests.
-// It converts the Data map to the appropriate body format based on Content-Type.
-// This is an internal method used during request preparation.
-func (c *ScrapeConfig) processBody() error {
-	method := strings.ToUpper(c.Method.String())
-	if method != "POST" && method != "PUT" && method != "PATCH" {
-		return nil
-	}
-
-	if c.Body != "" && c.Data != nil {
-		return fmt.Errorf("%w: cannot set both Body and Data", ErrScrapeConfig)
-	}
-
-	if c.Data != nil {
-		contentType, ok := c.Headers["content-type"]
-		if !ok {
-			contentType = "application/x-www-form-urlencoded"
-			if c.Headers == nil {
-				c.Headers = make(map[string]string)
-			}
-			c.Headers["content-type"] = contentType
-		}
-
-		switch {
-		case strings.Contains(contentType, "application/json"):
-			jsonData, err := json.Marshal(c.Data)
-			if err != nil {
-				return err
-			}
-			c.Body = string(jsonData)
-		case strings.Contains(contentType, "application/x-www-form-urlencoded"):
-			values := url.Values{}
-			for k, v := range c.Data {
-				values.Set(k, fmt.Sprint(v))
-			}
-			c.Body = values.Encode()
-		default:
-			return fmt.Errorf("%w: unsupported content-type for Data field: %s. Use Body field instead", ErrScrapeConfig, contentType)
-		}
-	}
-
-	if c.Body != "" {
-		if _, ok := c.Headers["content-type"]; !ok {
-			if c.Headers == nil {
-				c.Headers = make(map[string]string)
-			}
-			c.Headers["content-type"] = "text/plain"
-		}
-	}
-	return nil
 }

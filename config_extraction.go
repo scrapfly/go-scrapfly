@@ -41,21 +41,21 @@ const (
 //	}
 type ExtractionConfig struct {
 	// Body is the document content to extract data from (required).
-	Body []byte
+	Body []byte `required:"true"`
 	// ContentType specifies the document content type, e.g., "text/html" (required).
-	ContentType string
+	ContentType string `required:"true"`
 	// URL is the original URL of the document (optional, helps with context).
 	URL string
 	// Charset specifies the character encoding of the document.
 	Charset string
 	// ExtractionTemplate is the name of a saved extraction template.
-	ExtractionTemplate string
+	ExtractionTemplate string `exclusive:"extraction"`
 	// ExtractionEphemeralTemplate is an inline extraction template definition.
-	ExtractionEphemeralTemplate map[string]interface{}
+	ExtractionEphemeralTemplate map[string]interface{} `exclusive:"extraction"`
 	// ExtractionPrompt is an AI prompt describing what data to extract.
-	ExtractionPrompt string
+	ExtractionPrompt string `exclusive:"extraction"`
 	// ExtractionModel specifies which AI model to use for extraction.
-	ExtractionModel string
+	ExtractionModel ExtractionModel `exclusive:"extraction" validate:"enum"`
 	// IsDocumentCompressed indicates if the Body is compressed.
 	IsDocumentCompressed bool
 	// DocumentCompressionFormat specifies the compression format if IsDocumentCompressed is true.
@@ -67,6 +67,20 @@ type ExtractionConfig struct {
 // toAPIParams converts the ExtractionConfig into URL parameters for the Scrapfly API.
 // This is an internal method used by the Client to prepare API requests.
 func (c *ExtractionConfig) toAPIParams() (url.Values, error) {
+
+	// validate exclusive fields, see struct tags
+	if err := ValidateExclusiveFields(c); err != nil {
+		return nil, err
+	}
+	// validate required fields, see struct tags
+	if err := ValidateRequiredFields(c); err != nil {
+		return nil, err
+	}
+	// validate enums, see struct tags
+	if err := ValidateEnums(c); err != nil {
+		return nil, err
+	}
+
 	params := url.Values{}
 
 	if len(c.Body) == 0 {
@@ -102,7 +116,7 @@ func (c *ExtractionConfig) toAPIParams() (url.Values, error) {
 		params.Set("extraction_prompt", c.ExtractionPrompt)
 	}
 	if c.ExtractionModel != "" {
-		params.Set("extraction_model", c.ExtractionModel)
+		params.Set("extraction_model", string(c.ExtractionModel))
 	}
 
 	if c.Webhook != "" {

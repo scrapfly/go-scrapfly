@@ -7,6 +7,50 @@ import (
 	"strings"
 )
 
+// ExtractionModel defines the type of extraction model to use for extraction.
+// see https://scrapfly.io/docs/extraction-api/automatic-ai#models
+type ExtractionModel string
+
+const (
+	ExtractionModelArticle                   ExtractionModel = "article"
+	ExtractionModelEvent                     ExtractionModel = "event"
+	ExtractionModelFoodRecipe                ExtractionModel = "food_recipe"
+	ExtractionModelHotel                     ExtractionModel = "hotel"
+	ExtractionModelHotelListing              ExtractionModel = "hotel_listing"
+	ExtractionModelJobListing                ExtractionModel = "job_listing"
+	ExtractionModelJobPosting                ExtractionModel = "job_posting"
+	ExtractionModelOrganization              ExtractionModel = "organization"
+	ExtractionModelProduct                   ExtractionModel = "product"
+	ExtractionModelProductListing            ExtractionModel = "product_listing"
+	ExtractionModelRealEstateProperty        ExtractionModel = "real_estate_property"
+	ExtractionModelRealEstatePropertyListing ExtractionModel = "real_estate_property_listing"
+	ExtractionModelReviewList                ExtractionModel = "review_list"
+	ExtractionModelSearchEngineResults       ExtractionModel = "search_engine_results"
+	ExtractionModelSocialMediaPost           ExtractionModel = "social_media_post"
+	ExtractionModelSoftware                  ExtractionModel = "software"
+	ExtractionModelStock                     ExtractionModel = "stock"
+	ExtractionModelVehicleAd                 ExtractionModel = "vehicle_ad"
+	ExtractionModelVehicleAdListing          ExtractionModel = "vehicle_ad_listing"
+)
+
+func (f ExtractionModel) Enum() []ExtractionModel {
+	return []ExtractionModel{ExtractionModelArticle, ExtractionModelEvent, ExtractionModelFoodRecipe, ExtractionModelHotel, ExtractionModelHotelListing, ExtractionModelJobListing, ExtractionModelJobPosting, ExtractionModelOrganization, ExtractionModelProduct, ExtractionModelProductListing, ExtractionModelRealEstateProperty, ExtractionModelRealEstatePropertyListing, ExtractionModelReviewList, ExtractionModelSearchEngineResults, ExtractionModelSocialMediaPost, ExtractionModelSoftware, ExtractionModelStock, ExtractionModelVehicleAd, ExtractionModelVehicleAdListing}
+}
+
+func (f ExtractionModel) AnyEnum() []any {
+	return []any{ExtractionModelArticle, ExtractionModelEvent, ExtractionModelFoodRecipe, ExtractionModelHotel, ExtractionModelHotelListing, ExtractionModelJobListing, ExtractionModelJobPosting, ExtractionModelOrganization, ExtractionModelProduct, ExtractionModelProductListing, ExtractionModelRealEstateProperty, ExtractionModelRealEstatePropertyListing, ExtractionModelReviewList, ExtractionModelSearchEngineResults, ExtractionModelSocialMediaPost, ExtractionModelSoftware, ExtractionModelStock, ExtractionModelVehicleAd, ExtractionModelVehicleAdListing}
+}
+func (f ExtractionModel) String() string {
+	if slices.Contains(f.Enum(), f) {
+		return string(f)
+	}
+	return "invalid_extraction_model"
+}
+
+func (f ExtractionModel) IsValid() bool {
+	return IsValidEnumType(f)
+}
+
 // ProxyPool represents the type of proxy pool to use for scraping.
 type ProxyPool string
 

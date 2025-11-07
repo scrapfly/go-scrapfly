@@ -534,6 +534,109 @@ func Example_scrapeExtraction() {
 	fmt.Println("extraction result:")
 	extractedDataJSON, _ := json.MarshalIndent(scrapeResult.Result.ExtractedData, "", "  ")
 	fmt.Println(string(extractedDataJSON))
+	// Output: scrapfly: 2025/11/07 01:01:46 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// scrapfly: 2025/11/07 01:01:58 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXX
+	// extraction result:
+	// {
+	//   "data": {
+	//     "product": {
+	//       "aggregateRating": {
+	//         "ratingValue": "4.7",
+	//         "reviewCount": "10"
+	//       },
+	//       "brand": "ChocoDelight",
+	//       "description": "Indulge your sweet tooth with our Box of Chocolate Candy. Each box contains an assortment of rich, flavorful chocolates with a smooth, creamy filling. Choose from a variety of flavors including zesty orange and sweet cherry. Whether you're looking for the perfect gift or just want to treat yourself, our Box of Chocolate Candy is sure to satisfy.",
+	//       "features": {
+	//         "care instructions": "Store in a cool, dry place",
+	//         "flavors": "Available in Orange and Cherry flavors",
+	//         "material": "Premium quality chocolate",
+	//         "purpose": "Ideal for gifting or self-indulgence",
+	//         "sizes": "Available in small, medium, and large boxes"
+	//       },
+	//       "image": "https://web-scraping.dev/assets/products/orange-chocolate-box-medium-1.webp",
+	//       "name": "Box of Chocolate Candy",
+	//       "offers": {
+	//         "availability": "InStock",
+	//         "highPrice": "19.99",
+	//         "lowPrice": "9.99",
+	//         "priceCurrency": "USD"
+	//       },
+	//       "packs": [
+	//         {
+	//           "Delivery Type": "1 Day shipping",
+	//           "Package Dimension": "100x230 cm",
+	//           "Package Weight": "1,00 kg",
+	//           "Variants": "6 available",
+	//           "Version": "Pack 1"
+	//         },
+	//         {
+	//           "Delivery Type": "1 Day shipping",
+	//           "Package Dimension": "200x460 cm",
+	//           "Package Weight": "2,11 kg",
+	//           "Variants": "6 available",
+	//           "Version": "Pack 2"
+	//         },
+	//         {
+	//           "Delivery Type": "1 Day shipping",
+	//           "Package Dimension": "300x690 cm",
+	//           "Package Weight": "3,22 kg",
+	//           "Variants": "6 available",
+	//           "Version": "Pack 3"
+	//         },
+	//         {
+	//           "Delivery Type": "1 Day shipping",
+	//           "Package Dimension": "400x920 cm",
+	//           "Package Weight": "4,33 kg",
+	//           "Variants": "6 available",
+	//           "Version": "Pack 4"
+	//         },
+	//         {
+	//           "Delivery Type": "1 Day shipping",
+	//           "Package Dimension": "500x1150 cm",
+	//           "Package Weight": "5,44 kg",
+	//           "Variants": "6 available",
+	//           "Version": "Pack 5"
+	//         }
+	//       ],
+	//       "reviews": [
+	//         {
+	//           "datePublished": "2022-07-22",
+	//           "ratingValue": "5",
+	//           "reviewBody": "Absolutely delicious! The orange flavor is my favorite."
+	//         },
+	//         {
+	//           "datePublished": "2022-08-16",
+	//           "ratingValue": "4",
+	//           "reviewBody": "I bought these as a gift, and they were well received. Will definitely purchase again."
+	//         },
+	//         {
+	//           "datePublished": "2022-09-10",
+	//           "ratingValue": "5",
+	//           "reviewBody": "Nice variety of flavors. The chocolate is rich and smooth."
+	//         },
+	//         {
+	//           "datePublished": "2022-10-02",
+	//           "ratingValue": "5",
+	//           "reviewBody": "The cherry flavor is amazing. Will be buying more."
+	//         },
+	//         {
+	//           "datePublished": "2022-11-05",
+	//           "ratingValue": "4",
+	//           "reviewBody": "A bit pricey, but the quality of the chocolate is worth it."
+	//         }
+	//       ],
+	//       "variants": [
+	//         "orange, small",
+	//         "orange, medium",
+	//         "orange, large",
+	//         "cherry, small",
+	//         "cherry, medium",
+	//         "cherry, large"
+	//       ]
+	//     }
+	//   },
+	//   "content_type": "application/json"
+	// }
 }
 
 // extractionLLM demonstrates using the extraction API with LLM prompts
@@ -583,11 +686,11 @@ func Example_extractionLLM() {
 	fmt.Println("\nllm extraction in JSON:")
 	llmFormatResultJSON, _ := json.MarshalIndent(llmFormatResult, "", "  ")
 	fmt.Println(string(llmFormatResultJSON))
-	// Output: scrapfly: 2025/10/26 05:40:07 [DEBUG] scraping url https://web-scraping.dev/product/1
-	// scrapfly: 2025/10/26 05:40:10 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/01K8FGFYM4NC6TYYBT805BSH30
+	// Output: scrapfly: 2025/11/07 01:01:58 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// scrapfly: 2025/11/07 01:02:00 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXX
 	// llm extraction:
 	// {
-	//   "data": "The price of the \"Box of Chocolate Candy\" is $9.99, with a previous price of $12.99.",
+	//   "data": "The price of the \"Box of Chocolate Candy\" is $9.99 from $12.99. The lowPrice is \"9.99\" and the highPrice is \"19.99\" according to the JSON-LD metadata.",
 	//   "content_type": "text/plain"
 	// }
 	//
@@ -595,10 +698,61 @@ func Example_extractionLLM() {
 	//
 	//	{
 	//	  "data": {
-	//	    "currency": "USD",
-	//	    "original_price": 12.99,
-	//	    "price": 9.99,
-	//	    "product": "Box of Chocolate Candy"
+	//	    "product": "Box of Chocolate Candy",
+	//	    "similar_products": [
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "4.99",
+	//	        "product": "Dragon Energy Potion"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "89.99",
+	//	        "product": "Hiking Boots for Outdoor Adventures"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "4.99",
+	//	        "product": "Teal Energy Potion"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "14.99",
+	//	        "product": "Cat-Ear Beanie"
+	//	      }
+	//	    ],
+	//	    "variants": [
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "orange, small"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "orange, medium"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "orange, large"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "cherry, small"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "cherry, medium"
+	//	      },
+	//	      {
+	//	        "currency": "USD",
+	//	        "price": "9.99",
+	//	        "variant": "cherry, large"
+	//	      }
+	//	    ]
 	//	  },
 	//	  "content_type": "application/json"
 	//	}

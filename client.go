@@ -152,7 +152,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 	if err := config.processBody(); err != nil {
 		return nil, err
 	}
-	params, err := config.toAPIParams()
+	params, err := config.toAPIParamsWithValidation()
 	if err != nil {
 		return nil, err
 	}
