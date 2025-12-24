@@ -81,6 +81,9 @@ type ScreenshotConfig struct {
 	CacheClear bool
 	// Webhook is the name of a webhook to call after the request completes.
 	Webhook string
+	// VisionDeficiencyType specifies the type of vision deficiency to simulate.
+	// see https://scrapfly.io/docs/screenshot-api/accessibility#vision_deficiency
+	VisionDeficiencyType VisionDeficiencyType
 }
 
 // toAPIParams converts the ScreenshotConfig into URL parameters for the Scrapfly API.
@@ -141,6 +144,10 @@ func (c *ScreenshotConfig) toAPIParams() (url.Values, error) {
 
 	if c.Webhook != "" {
 		params.Set("webhook_name", c.Webhook)
+	}
+
+	if c.VisionDeficiencyType != "" {
+		params.Set("vision_deficiency", string(c.VisionDeficiencyType))
 	}
 
 	return params, nil

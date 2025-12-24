@@ -7,6 +7,35 @@ import (
 	"strings"
 )
 
+type VisionDeficiencyType string
+
+const (
+	VisionDeficiencyTypeNone          VisionDeficiencyType = "none"
+	VisionDeficiencyTypeDeuteranopia  VisionDeficiencyType = "deuteranopia"
+	VisionDeficiencyTypeProtanopia    VisionDeficiencyType = "protanopia"
+	VisionDeficiencyTypeTritanopia    VisionDeficiencyType = "tritanopia"
+	VisionDeficiencyTypeAchromatopsia VisionDeficiencyType = "achromatopsia"
+	VisionDeficiencyTypeBlurredVision VisionDeficiencyType = "blurred_vision"
+)
+
+func (f VisionDeficiencyType) Enum() []VisionDeficiencyType {
+	return []VisionDeficiencyType{VisionDeficiencyTypeNone, VisionDeficiencyTypeDeuteranopia, VisionDeficiencyTypeProtanopia, VisionDeficiencyTypeTritanopia, VisionDeficiencyTypeAchromatopsia, VisionDeficiencyTypeBlurredVision}
+}
+
+func (f VisionDeficiencyType) AnyEnum() []any {
+	return []any{VisionDeficiencyTypeNone, VisionDeficiencyTypeDeuteranopia, VisionDeficiencyTypeProtanopia, VisionDeficiencyTypeTritanopia, VisionDeficiencyTypeAchromatopsia, VisionDeficiencyTypeBlurredVision}
+}
+func (f VisionDeficiencyType) String() string {
+	if slices.Contains(f.Enum(), f) {
+		return string(f)
+	}
+	return "invalid_vision_deficiency_type"
+}
+
+func (f VisionDeficiencyType) IsValid() bool {
+	return IsValidEnumType(f)
+}
+
 // ExtractionModel defines the type of extraction model to use for extraction.
 // see https://scrapfly.io/docs/extraction-api/automatic-ai#models
 type ExtractionModel string

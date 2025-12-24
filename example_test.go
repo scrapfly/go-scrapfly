@@ -1114,6 +1114,9 @@ func Example_screenshot() {
 
 		// for pages that require scrolling to load elements (like endless paging) use
 		AutoScroll: true,
+
+		// Simulate vision deficiency (new)
+		VisionDeficiencyType: scrapfly.VisionDeficiencyTypeBlurredVision,
 	})
 	if err != nil {
 		log.Fatalf("screenshot failed: %v", err)
