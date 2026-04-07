@@ -24,9 +24,18 @@ const (
 // Client is the main client for interacting with the Scrapfly API.
 // It handles authentication, request execution, and response parsing.
 type Client struct {
-	key        string
-	host       string
-	httpClient *http.Client
+	key              string
+	host             string
+	cloudBrowserHost string
+	httpClient       *http.Client
+}
+
+// SetCloudBrowserHost overrides the default Cloud Browser host
+// (wss://browser.scrapfly.io). Useful for self-hosted or development
+// environments. When unset, CloudBrowser methods fall back to the
+// public production host.
+func (c *Client) SetCloudBrowserHost(host string) {
+	c.cloudBrowserHost = host
 }
 
 // New creates a new Scrapfly client with the provided API key.
