@@ -119,7 +119,7 @@ func TestIntegrationCrawlContentsPlain(t *testing.T) {
 	// The seed URL is always visited, so we can read it back without having
 	// to first list all visited URLs.
 	seedURL := "https://web-scraping.dev/products"
-	md, err := crawl.Read(seedURL, CrawlerFormatMarkdown)
+	md, err := crawl.ReadString(seedURL, CrawlerFormatMarkdown)
 	if err != nil {
 		t.Fatal(err)
 	}
