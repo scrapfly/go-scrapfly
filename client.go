@@ -38,6 +38,32 @@ func (c *Client) SetCloudBrowserHost(host string) {
 	c.cloudBrowserHost = host
 }
 
+// SetHTTPClient replaces the underlying *http.Client used for all API calls.
+// This lets callers install a custom transport (e.g. for request logging,
+// tracing, tests, or a shared connection pool).
+//
+// Passing nil is a no-op.
+//
+// Example — install a RoundTripper that logs every request:
+//
+//	client, _ := scrapfly.New("YOUR_API_KEY")
+//	client.SetHTTPClient(&http.Client{
+//	    Transport: &loggingTransport{base: http.DefaultTransport},
+//	    Timeout:   150 * time.Second,
+//	})
+func (c *Client) SetHTTPClient(httpClient *http.Client) {
+	if httpClient == nil {
+		return
+	}
+	c.httpClient = httpClient
+}
+
+// HTTPClient returns the *http.Client used by this Scrapfly client.
+// Useful if callers want to wrap the existing transport instead of replacing it.
+func (c *Client) HTTPClient() *http.Client {
+	return c.httpClient
+}
+
 // New creates a new Scrapfly client with the provided API key.
 // The API key can be obtained from https://scrapfly.io/dashboard.
 //
