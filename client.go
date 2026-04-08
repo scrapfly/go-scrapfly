@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,60 +86,6 @@ func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
 // APIKey returns the currently configured API key.
 func (c *Client) APIKey() string {
 	return c.key
-}
-
-// CloudBrowser builds the Cloud Browser CDP WebSocket URL for the given
-// config. This is a pure URL builder — it does NOT make any network call.
-// Pass the returned URL to your CDP client (chromedp, playwright-go, etc.)
-// to allocate and connect to a browser session.
-//
-// When config is nil, the browser is started with the server's default
-// settings (datacenter pool, random OS, random country, 15-min timeout).
-//
-// The host is derived from this client's API host: api.scrapfly.io →
-// browser.scrapfly.io, api.scrapfly.home → browser.scrapfly.home.
-// Override the derived host by setting the SCRAPFLY_BROWSER_HOST env var.
-//
-// Example:
-//
-//	client, _ := scrapfly.New("YOUR_API_KEY")
-//	wsURL := client.CloudBrowser(&scrapfly.CloudBrowserConfig{
-//	    ProxyPool: scrapfly.CloudBrowserProxyPoolDatacenter,
-//	    OS:        scrapfly.CloudBrowserOSLinux,
-//	})
-//	// Hand wsURL to chromedp.NewRemoteAllocator(...) or similar.
-//
-// Returns an error if the config has invalid enum values
-// (e.g. ProxyPool that doesn't match a known pool name).
-func (c *Client) CloudBrowser(config *CloudBrowserConfig) (string, error) {
-	params := url.Values{}
-	params.Set("api_key", c.key)
-	if config != nil {
-		if err := config.validate(); err != nil {
-			return "", err
-		}
-		for k, v := range config.toQueryParams() {
-			for _, vv := range v {
-				params.Set(k, vv)
-			}
-		}
-	}
-
-	// Map api.scrapfly.{io,home} → browser.scrapfly.{io,home}.
-	// SCRAPFLY_BROWSER_HOST takes precedence for custom edges.
-	browserHost := os.Getenv("SCRAPFLY_BROWSER_HOST")
-	if browserHost == "" {
-		bare := strings.TrimPrefix(strings.TrimPrefix(c.host, "https://"), "http://")
-		if strings.HasPrefix(bare, "api.") {
-			bare = "browser." + bare[len("api."):]
-		}
-		browserHost = bare
-	} else {
-		// Strip scheme if user passed one
-		browserHost = strings.TrimPrefix(strings.TrimPrefix(browserHost, "https://"), "http://")
-	}
-
-	return "wss://" + browserHost + "?" + params.Encode(), nil
 }
 
 // SetAPIKey updates the API key for the client.
