@@ -15,19 +15,19 @@ const (
 
 // CloudBrowserConfig configures a Cloud Browser session.
 type CloudBrowserConfig struct {
-	ProxyPool   string   `json:"proxy_pool,omitempty"`
-	OS          string   `json:"os,omitempty"`
-	Country     string   `json:"country,omitempty"`
-	Session     string   `json:"session,omitempty"`
-	Timeout     int      `json:"timeout,omitempty"`      // Session timeout in seconds (default 900)
-	BlockImages bool     `json:"block_images,omitempty"`
-	BlockStyles bool     `json:"block_styles,omitempty"`
-	BlockFonts  bool     `json:"block_fonts,omitempty"`
-	BlockMedia  bool     `json:"block_media,omitempty"`
-	Screenshot  bool     `json:"screenshot,omitempty"`
-	Cache       bool     `json:"cache,omitempty"`
-	Blacklist   bool     `json:"blacklist,omitempty"`
-	Debug       bool     `json:"debug,omitempty"`
+	ProxyPool    string   `json:"proxy_pool,omitempty"`
+	OS           string   `json:"os,omitempty"`
+	Country      string   `json:"country,omitempty"`
+	Session      string   `json:"session,omitempty"`
+	Timeout      int      `json:"timeout,omitempty"` // Session timeout in seconds (default 900)
+	BlockImages  bool     `json:"block_images,omitempty"`
+	BlockStyles  bool     `json:"block_styles,omitempty"`
+	BlockFonts   bool     `json:"block_fonts,omitempty"`
+	BlockMedia   bool     `json:"block_media,omitempty"`
+	Screenshot   bool     `json:"screenshot,omitempty"`
+	Cache        bool     `json:"cache,omitempty"`
+	Blacklist    bool     `json:"blacklist,omitempty"`
+	Debug        bool     `json:"debug,omitempty"`
 	Resolution   string   `json:"resolution,omitempty"`
 	Extensions   []string `json:"extensions,omitempty"`
 	BrowserBrand string   `json:"browser_brand,omitempty"`
@@ -106,14 +106,36 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 	}
 
-	return fmt.Sprintf("wss://%s?%s", strings.TrimPrefix(host, "https://"), params.Encode())
+	// Normalize `host` to a wss:// URL regardless of the scheme the caller
+	// configured. Accepted input schemes: https:// (default), wss://, ws://,
+	// http:// (dev stacks). Dev stacks on .home use ws:// since they don't
+	// carry a real TLS cert on the browser service.
+	hostNoScheme := host
+	var wsScheme string
+	switch {
+	case strings.HasPrefix(host, "wss://"):
+		hostNoScheme = strings.TrimPrefix(host, "wss://")
+		wsScheme = "wss"
+	case strings.HasPrefix(host, "ws://"):
+		hostNoScheme = strings.TrimPrefix(host, "ws://")
+		wsScheme = "ws"
+	case strings.HasPrefix(host, "https://"):
+		hostNoScheme = strings.TrimPrefix(host, "https://")
+		wsScheme = "wss"
+	case strings.HasPrefix(host, "http://"):
+		hostNoScheme = strings.TrimPrefix(host, "http://")
+		wsScheme = "ws"
+	default:
+		wsScheme = "wss"
+	}
+	return fmt.Sprintf("%s://%s?%s", wsScheme, hostNoScheme, params.Encode())
 }
 
 // UnblockConfig configures an unblock request.
 type UnblockConfig struct {
 	URL            string `json:"url"`
 	Country        string `json:"country,omitempty"`
-	Timeout        int    `json:"timeout,omitempty"`        // Navigation timeout in seconds
+	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
 }
 
@@ -124,14 +146,30 @@ type UnblockResult struct {
 	RunID     string `json:"run_id"`
 }
 
-// CloudBrowserUnblock bypasses anti-bot protection and returns a WebSocket URL
-// to a browser with cookies/state pre-loaded.
-func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, error) {
+// cloudBrowserRESTHost returns the configured cloud browser host normalized to
+// an https:// / http:// form suitable for REST calls. Callers typically
+// configure a `wss://` / `ws://` host (the CDP websocket entry point); the
+// REST endpoints (`/unblock`, `/session/.../stop`, `/extension`) live on the
+// same host under the matching http scheme.
+func (c *Client) cloudBrowserRESTHost() string {
 	host := c.cloudBrowserHost
 	if host == "" {
 		host = defaultCloudBrowserHost
 	}
+	switch {
+	case strings.HasPrefix(host, "wss://"):
+		return "https://" + strings.TrimPrefix(host, "wss://")
+	case strings.HasPrefix(host, "ws://"):
+		return "http://" + strings.TrimPrefix(host, "ws://")
+	default:
+		return host
+	}
+}
 
+// CloudBrowserUnblock bypasses anti-bot protection and returns a WebSocket URL
+// to a browser with cookies/state pre-loaded.
+func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, error) {
+	host := c.cloudBrowserRESTHost()
 	reqURL := fmt.Sprintf("%s/unblock?key=%s", host, url.QueryEscape(c.key))
 
 	body, err := json.Marshal(config)
@@ -171,11 +209,7 @@ func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, erro
 
 // CloudBrowserSessionStop terminates a browser session.
 func (c *Client) CloudBrowserSessionStop(sessionID string) error {
-	host := c.cloudBrowserHost
-	if host == "" {
-		host = defaultCloudBrowserHost
-	}
-
+	host := c.cloudBrowserRESTHost()
 	reqURL := fmt.Sprintf("%s/session/%s/stop?key=%s", host, url.PathEscape(sessionID), url.QueryEscape(c.key))
 
 	req, err := http.NewRequest(http.MethodPost, reqURL, nil)
