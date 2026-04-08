@@ -111,7 +111,15 @@ type ConfigData struct {
 	SessionStickyProxy bool     `json:"session_sticky_proxy"`
 	Tags               []string `json:"tags"`
 	CorrelationID      *string  `json:"correlation_id"`
-	Body               *string  `json:"body"`
+	// Retry echoes back the retry=true/false flag the caller sent. The server
+	// may normalize this to a nested object in a future release; for now it's
+	// a plain bool. Nullable because older API versions omit the field.
+	Retry *bool `json:"retry,omitempty"`
+	// BrowserBrand echoes back the browser_brand value the caller sent when
+	// render_js=true. Nullable because the field is only populated when the
+	// request actually exercised the browser path.
+	BrowserBrand *string `json:"browser_brand,omitempty"`
+	Body         *string `json:"body"`
 	// Headers echoes back the request headers the server actually sent. The
 	// API serializes each header value as an array (e.g. `{"accept": ["*/*"]}`)
 	// to preserve HTTP's multi-value semantics, matching Go's stdlib
