@@ -95,40 +95,46 @@ type errorResponse struct {
 // ConfigData contains the configuration that was used for a scrape request.
 // This mirrors the 'config' object in the API response.
 type ConfigData struct {
-	URL                string            `json:"url"`
-	Method             string            `json:"method"`
-	Country            *string           `json:"country"`
-	RenderJS           bool              `json:"render_js"`
-	Cache              bool              `json:"cache"`
-	CacheClear         bool              `json:"cache_clear"`
-	CacheTTL           int               `json:"cache_ttl"`
-	SSL                bool              `json:"ssl"`
-	DNS                bool              `json:"dns"`
-	ASP                bool              `json:"asp"`
-	Debug              bool              `json:"debug"`
-	ProxyPool          string            `json:"proxy_pool"`
-	Session            *string           `json:"session"`
-	SessionStickyProxy bool              `json:"session_sticky_proxy"`
-	Tags               []string          `json:"tags"`
-	CorrelationID      *string           `json:"correlation_id"`
-	Body               *string           `json:"body"`
-	Headers            map[string]string `json:"headers"`
-	JS                 *string           `json:"js"`
-	RenderingWait      int               `json:"rendering_wait"`
-	WaitForSelector    *string           `json:"wait_for_selector"`
-	Screenshots        map[string]string `json:"screenshots"`
-	WebhookName        *string           `json:"webhook_name"`
-	Timeout            int               `json:"timeout"`
-	JSScenario         interface{}       `json:"js_scenario"`
-	Extract            interface{}       `json:"extract"`
-	Lang               []string          `json:"lang"`
-	OS                 *string           `json:"os"`
-	AutoScroll         bool              `json:"auto_scroll"`
-	Env                string            `json:"env"`
-	Origin             string            `json:"origin"`
-	Project            string            `json:"project"`
-	UserUUID           string            `json:"user_uuid"`
-	UUID               string            `json:"uuid"`
+	URL                string   `json:"url"`
+	Method             string   `json:"method"`
+	Country            *string  `json:"country"`
+	RenderJS           bool     `json:"render_js"`
+	Cache              bool     `json:"cache"`
+	CacheClear         bool     `json:"cache_clear"`
+	CacheTTL           int      `json:"cache_ttl"`
+	SSL                bool     `json:"ssl"`
+	DNS                bool     `json:"dns"`
+	ASP                bool     `json:"asp"`
+	Debug              bool     `json:"debug"`
+	ProxyPool          string   `json:"proxy_pool"`
+	Session            *string  `json:"session"`
+	SessionStickyProxy bool     `json:"session_sticky_proxy"`
+	Tags               []string `json:"tags"`
+	CorrelationID      *string  `json:"correlation_id"`
+	Body               *string  `json:"body"`
+	// Headers echoes back the request headers the server actually sent. The
+	// API serializes each header value as an array (e.g. `{"accept": ["*/*"]}`)
+	// to preserve HTTP's multi-value semantics, matching Go's stdlib
+	// http.Header shape. Request-side headers live on ScrapeConfig.Headers
+	// (plain map[string]string), which the client serializes into the
+	// `headers[key]=value` query-string form.
+	Headers         map[string][]string `json:"headers"`
+	JS              *string             `json:"js"`
+	RenderingWait   int                 `json:"rendering_wait"`
+	WaitForSelector *string             `json:"wait_for_selector"`
+	Screenshots     map[string]string   `json:"screenshots"`
+	WebhookName     *string             `json:"webhook_name"`
+	Timeout         int                 `json:"timeout"`
+	JSScenario      interface{}         `json:"js_scenario"`
+	Extract         interface{}         `json:"extract"`
+	Lang            []string            `json:"lang"`
+	OS              *string             `json:"os"`
+	AutoScroll      bool                `json:"auto_scroll"`
+	Env             string              `json:"env"`
+	Origin          string              `json:"origin"`
+	Project         string              `json:"project"`
+	UserUUID        string              `json:"user_uuid"`
+	UUID            string              `json:"uuid"`
 }
 
 // ContextData contains metadata about the scrape request execution.
