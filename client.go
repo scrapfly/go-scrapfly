@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,6 +78,60 @@ func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
 // APIKey returns the currently configured API key.
 func (c *Client) APIKey() string {
 	return c.key
+}
+
+// CloudBrowser builds the Cloud Browser CDP WebSocket URL for the given
+// config. This is a pure URL builder — it does NOT make any network call.
+// Pass the returned URL to your CDP client (chromedp, playwright-go, etc.)
+// to allocate and connect to a browser session.
+//
+// When config is nil, the browser is started with the server's default
+// settings (datacenter pool, random OS, random country, 15-min timeout).
+//
+// The host is derived from this client's API host: api.scrapfly.io →
+// browser.scrapfly.io, api.scrapfly.home → browser.scrapfly.home.
+// Override the derived host by setting the SCRAPFLY_BROWSER_HOST env var.
+//
+// Example:
+//
+//	client, _ := scrapfly.New("YOUR_API_KEY")
+//	wsURL := client.CloudBrowser(&scrapfly.CloudBrowserConfig{
+//	    ProxyPool: scrapfly.CloudBrowserProxyPoolDatacenter,
+//	    OS:        scrapfly.CloudBrowserOSLinux,
+//	})
+//	// Hand wsURL to chromedp.NewRemoteAllocator(...) or similar.
+//
+// Returns an error if the config has invalid enum values
+// (e.g. ProxyPool that doesn't match a known pool name).
+func (c *Client) CloudBrowser(config *CloudBrowserConfig) (string, error) {
+	params := url.Values{}
+	params.Set("api_key", c.key)
+	if config != nil {
+		if err := config.validate(); err != nil {
+			return "", err
+		}
+		for k, v := range config.toQueryParams() {
+			for _, vv := range v {
+				params.Set(k, vv)
+			}
+		}
+	}
+
+	// Map api.scrapfly.{io,home} → browser.scrapfly.{io,home}.
+	// SCRAPFLY_BROWSER_HOST takes precedence for custom edges.
+	browserHost := os.Getenv("SCRAPFLY_BROWSER_HOST")
+	if browserHost == "" {
+		bare := strings.TrimPrefix(strings.TrimPrefix(c.host, "https://"), "http://")
+		if strings.HasPrefix(bare, "api.") {
+			bare = "browser." + bare[len("api."):]
+		}
+		browserHost = bare
+	} else {
+		// Strip scheme if user passed one
+		browserHost = strings.TrimPrefix(strings.TrimPrefix(browserHost, "https://"), "http://")
+	}
+
+	return "wss://" + browserHost + "?" + params.Encode(), nil
 }
 
 // SetAPIKey updates the API key for the client.
@@ -295,6 +350,20 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 	}
 }
 
+// ConcurrentScrapeResult is one entry in the channel returned by ConcurrentScrape.
+// Exactly one of Result and Error is non-nil per emission.
+//
+// This was previously an anonymous struct with embedded fields, which prevented
+// callers outside package scrapfly from accessing the error (Go's universe-scope
+// `error` type produces an unexported promoted field in anonymous structs).
+// Named exported fields make the result usable from any caller.
+type ConcurrentScrapeResult struct {
+	// Result is the successful scrape, or nil when Error is set.
+	Result *ScrapeResult
+	// Error is the failure, or nil when Result is set.
+	Error error
+}
+
 // ConcurrentScrape performs multiple scraping requests concurrently with controlled concurrency.
 // This is useful for scraping multiple pages efficiently while respecting rate limits.
 //
@@ -302,8 +371,8 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 //   - configs: A slice of ScrapeConfig objects to scrape
 //   - concurrencyLimit: Maximum number of concurrent requests. If <= 0, uses account's concurrent limit
 //
-// Returns a channel that emits results as they complete. Each result contains either
-// a successful ScrapeResult or an error.
+// Returns a channel that emits ConcurrentScrapeResult values as scrapes complete.
+// Each entry has either Result (success) or Error (failure) set.
 //
 // Example:
 //
@@ -312,32 +381,25 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 //	    {URL: "https://example.com/page2"},
 //	    {URL: "https://example.com/page3"},
 //	}
-//	resultsChan := client.ConcurrentScrape(configs, 3)
-//	for result := range resultsChan {
-//	    if result.error != nil {
-//	        log.Printf("Error: %v", result.error)
+//	for item := range client.ConcurrentScrape(configs, 3) {
+//	    if item.Error != nil {
+//	        log.Printf("Error: %v", item.Error)
 //	        continue
 //	    }
-//	    fmt.Println(result.ScrapeResult.Result.Content)
+//	    fmt.Println(item.Result.Result.Content)
 //	}
-func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan struct {
-	*ScrapeResult
-	error
-} {
-	resultsChan := make(chan struct {
-		*ScrapeResult
-		error
-	}, len(configs))
+func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan ConcurrentScrapeResult {
+	resultsChan := make(chan ConcurrentScrapeResult, len(configs))
 
 	var wg sync.WaitGroup
 
 	if concurrencyLimit <= 0 {
 		account, err := c.Account()
 		if err != nil {
-			resultsChan <- struct {
-				*ScrapeResult
-				error
-			}{nil, fmt.Errorf("failed to get account for concurrency limit: %w", err)}
+			resultsChan <- ConcurrentScrapeResult{
+				Result: nil,
+				Error:  fmt.Errorf("failed to get account for concurrency limit: %w", err),
+			}
 			close(resultsChan)
 			return resultsChan
 		}
@@ -352,10 +414,7 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
 			defer wg.Done()
 			for config := range jobs {
 				result, err := c.Scrape(config)
-				resultsChan <- struct {
-					*ScrapeResult
-					error
-				}{result, err}
+				resultsChan <- ConcurrentScrapeResult{Result: result, Error: err}
 			}
 		}()
 	}

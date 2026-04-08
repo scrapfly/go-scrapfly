@@ -108,6 +108,10 @@ type ScrapeConfig struct {
 	OS string
 	// Lang sets the Accept-Language header values.
 	Lang []string
+	// BrowserBrand selects the Chromium-based browser for fingerprint generation.
+	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
+	// Invalid values are silently dropped by the server.
+	BrowserBrand string
 }
 
 // processBody handles the Data and Body fields for POST/PUT/PATCH requests.
@@ -333,6 +337,9 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 	}
 	if len(c.Lang) > 0 {
 		params.Set("lang", strings.Join(c.Lang, ","))
+	}
+	if c.BrowserBrand != "" {
+		params.Set("browser_brand", c.BrowserBrand)
 	}
 
 	if c.Format != "" {

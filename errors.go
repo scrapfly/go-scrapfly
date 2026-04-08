@@ -67,6 +67,28 @@ var (
 
 	// ErrUnhandledAPIResponse indicates an unexpected API error response.
 	ErrUnhandledAPIResponse = errors.New("unhandled API error response")
+
+	// ErrCrawlerConfig indicates invalid crawler configuration.
+	ErrCrawlerConfig = errors.New("invalid crawler config")
+
+	// ErrCrawlerFailed indicates a crawler API error (e.g. ERR::CRAWLER::*).
+	ErrCrawlerFailed = errors.New("crawler error")
+
+	// ErrCrawlerNotStarted indicates Crawl helper methods were called before Start().
+	ErrCrawlerNotStarted = errors.New("crawler not started, call Start() first")
+
+	// ErrCrawlerAlreadyStarted indicates Crawl.Start() was called twice.
+	ErrCrawlerAlreadyStarted = errors.New("crawler already started")
+
+	// ErrCrawlerTimeout indicates Crawl.Wait() exceeded the caller's deadline.
+	ErrCrawlerTimeout = errors.New("crawler wait timed out")
+
+	// ErrCrawlerCancelled indicates Crawl.Wait() observed a CANCELLED terminal state.
+	ErrCrawlerCancelled = errors.New("crawler was cancelled")
+
+	// ErrUnexpectedResponseFormat indicates the server returned a Content-Type the SDK didn't expect.
+	// Used for example when GET /crawl/{uuid}/urls returns JSON instead of streaming text.
+	ErrUnexpectedResponseFormat = errors.New("unexpected response format")
 )
 
 // APIError represents a detailed error returned by the Scrapfly API.

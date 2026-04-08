@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/scrapfly/go-scrapfly"
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
@@ -361,6 +362,74 @@ func downloadFile(apiKey string) {
 	}
 }
 
+// crawlerQuickstart demonstrates the high-level Crawler API workflow:
+// schedule a small crawl, wait for it to finish, read back the seed URL's
+// markdown content, and download the WARC artifact.
+//
+// Run with:
+//
+//	go run main.go crawlerQuickstart $SCRAPFLY_API_KEY
+func crawlerQuickstart(apiKey string) {
+	client, err := scrapfly.New(apiKey)
+	if err != nil {
+		log.Fatalf("failed to create client: %v", err)
+	}
+
+	crawl := scrapfly.NewCrawl(client, &scrapfly.CrawlerConfig{
+		URL:            "https://web-scraping.dev/products",
+		PageLimit:      5,
+		MaxDuration:    60,
+		ContentFormats: []scrapfly.CrawlerContentFormat{scrapfly.CrawlerFormatMarkdown},
+	})
+
+	fmt.Println("🕷  scheduling crawl...")
+	if err := crawl.Start(); err != nil {
+		log.Fatalf("Start failed: %v", err)
+	}
+	fmt.Printf("   uuid=%s\n", crawl.UUID())
+
+	fmt.Println("⏳ waiting for completion...")
+	if err := crawl.Wait(&scrapfly.WaitOptions{
+		PollInterval: 2 * time.Second,
+		MaxWait:      120 * time.Second,
+		Verbose:      true,
+	}); err != nil {
+		log.Fatalf("Wait failed: %v", err)
+	}
+
+	status, _ := crawl.Status(false)
+	fmt.Println("✅ crawl finished")
+	fmt.Printf("   status=%s is_success=%v\n", status.Status, *status.IsSuccess)
+	fmt.Printf("   visited=%d/%d duration=%ds credits=%d\n",
+		status.State.URLsVisited, status.State.URLsExtracted,
+		status.State.Duration, status.State.APICreditUsed)
+	if status.State.StopReason != nil {
+		fmt.Printf("   stop_reason=%s\n", *status.State.StopReason)
+	}
+
+	fmt.Println("\n📄 reading the seed URL as markdown (plain mode)...")
+	md, err := crawl.ReadString("https://web-scraping.dev/products", scrapfly.CrawlerFormatMarkdown)
+	if err != nil {
+		log.Fatalf("Read failed: %v", err)
+	}
+	fmt.Printf("   markdown length=%d chars\n", len(md))
+	preview := md
+	if len(preview) > 200 {
+		preview = preview[:200]
+	}
+	fmt.Printf("   first 200 chars: %s\n", preview)
+
+	fmt.Println("\n📦 downloading WARC artifact...")
+	warc, err := crawl.WARC()
+	if err != nil {
+		log.Fatalf("WARC failed: %v", err)
+	}
+	fmt.Printf("   warc bytes=%d\n", warc.Len())
+	fmt.Println("   (use a library like nlnwa/gowarc to parse the records)")
+
+	fmt.Println("\n🎉 done")
+}
+
 func main() {
 	// You can enable debug logs to see more details
 	scrapfly.DefaultLogger.SetLevel(scrapfly.LevelDebug)
@@ -377,6 +446,7 @@ func main() {
 		fmt.Println("  extractionTemplates   - Extract content using Template engine")
 		fmt.Println("  screenshot            - Capture screenshots using Screenshot API")
 		fmt.Println("  downloadFile          - Download files using Browser Data Capture")
+		fmt.Println("  crawlerQuickstart     - Schedule a small crawl, read content, and download WARC")
 		return
 	}
 
@@ -394,6 +464,7 @@ func main() {
 		"extractionTemplates":   extractionTemplates,
 		"screenshot":            screenshot,
 		"downloadFile":          downloadFile,
+		"crawlerQuickstart":     crawlerQuickstart,
 	}
 
 	fn, exists := functions[functionName]
