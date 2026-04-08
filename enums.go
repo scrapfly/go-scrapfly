@@ -218,19 +218,19 @@ const (
 	HttpMethodPost    HttpMethod = http.MethodPost
 	HttpMethodPut     HttpMethod = http.MethodPut
 	HttpMethodPatch   HttpMethod = http.MethodPatch
-	HttpMethodDelete  HttpMethod = http.MethodDelete
 	HttpMethodOptions HttpMethod = http.MethodOptions
 	//HttpMethodConnect HttpMethod = http.MethodConnect 404 on scrape endpoint
 	//HttpMethodTrace HttpMethod = http.MethodTrace 404 on scrape endpoint
+	//HttpMethodDelete HttpMethod = http.MethodDelete NOT in AllowedMethods (pkg/scraper/typesets_scraper.go): GET, POST, PUT, PATCH, OPTIONS, HEAD only
 	//HttpMethodHead HttpMethod = http.MethodHead will actually HEAD on scrape endpoint instead of target, by design, so will never work
 )
 
 func (f HttpMethod) Enum() []HttpMethod {
-	return []HttpMethod{HttpMethodGet, HttpMethodPost, HttpMethodPut, HttpMethodPatch, HttpMethodDelete, HttpMethodOptions}
+	return []HttpMethod{HttpMethodGet, HttpMethodPost, HttpMethodPut, HttpMethodPatch, HttpMethodOptions}
 }
 
 func (f HttpMethod) AnyEnum() []any {
-	return []any{HttpMethodGet, HttpMethodPost, HttpMethodPut, HttpMethodPatch, HttpMethodDelete, HttpMethodOptions}
+	return []any{HttpMethodGet, HttpMethodPost, HttpMethodPut, HttpMethodPatch, HttpMethodOptions}
 }
 func (f HttpMethod) String() string {
 	if slices.Contains(f.Enum(), f) {
