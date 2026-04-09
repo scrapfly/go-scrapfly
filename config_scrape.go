@@ -112,6 +112,10 @@ type ScrapeConfig struct {
 	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
 	// Invalid values are silently dropped by the server.
 	BrowserBrand string
+	// ProxifiedResponse returns the raw upstream response (target's status,
+	// headers, body) instead of the JSON envelope. When true, callers must
+	// use ScrapeProxified() instead of Scrape(), which returns *http.Response.
+	ProxifiedResponse bool
 }
 
 // processBody handles the Data and Body fields for POST/PUT/PATCH requests.
@@ -340,6 +344,9 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 	}
 	if c.BrowserBrand != "" {
 		params.Set("browser_brand", c.BrowserBrand)
+	}
+	if c.ProxifiedResponse {
+		params.Set("proxified_response", "true")
 	}
 
 	if c.Format != "" {

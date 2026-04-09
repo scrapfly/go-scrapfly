@@ -362,6 +362,54 @@ type ConcurrentScrapeResult struct {
 //	    {URL: "https://example.com/page3"},
 //	}
 //	for item := range client.ConcurrentScrape(configs, 3) {
+//
+// ScrapeProxified sends a scrape request with proxified_response=true and returns
+// the raw upstream *http.Response. The caller owns resp.Body (must Close() it).
+//
+// Unlike Scrape(), no JSON parsing occurs — the response body is the target
+// page's raw content, the status code is the upstream status, and Scrapfly
+// metadata is available on X-Scrapfly-* response headers (Api-Cost,
+// Content-Format, Log, etc).
+//
+// Use this when you want Scrapfly to act like an HTTP proxy and your code
+// already knows how to handle raw HTTP responses.
+func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error) {
+	config.ProxifiedResponse = true
+
+	if err := config.processBody(); err != nil {
+		return nil, err
+	}
+	params, err := config.toAPIParamsWithValidation()
+	if err != nil {
+		return nil, err
+	}
+	params.Set("key", c.key)
+
+	endpointURL, _ := url.Parse(c.host + "/scrape")
+	endpointURL.RawQuery = params.Encode()
+
+	method := "GET"
+	if config.Method != "" {
+		method = strings.ToUpper(config.Method.String())
+	}
+
+	req, err := http.NewRequest(method, endpointURL.String(), strings.NewReader(config.Body))
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range config.Headers {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	// Caller owns the body — do NOT defer resp.Body.Close() here.
+	return resp, nil
+}
+
 //	    if item.Error != nil {
 //	        log.Printf("Error: %v", item.Error)
 //	        continue
