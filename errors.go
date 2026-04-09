@@ -102,6 +102,8 @@ type APIError struct {
 	Code string
 	// HTTPStatusCode is the HTTP status code of the response.
 	HTTPStatusCode int
+	// Retryable indicates whether the caller should retry this request.
+	Retryable bool
 	// DocumentationURL provides a link to relevant documentation.
 	DocumentationURL string
 	// APIResponse contains the full API response (if available).

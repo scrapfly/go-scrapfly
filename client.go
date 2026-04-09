@@ -406,6 +406,27 @@ func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Error restoration: if X-Scrapfly-Reject-Code is present, the
+	// scrape failed. Close the body and return a typed error so callers
+	// get the same interface as non-proxified mode.
+	if rejectCode := resp.Header.Get("X-Scrapfly-Reject-Code"); rejectCode != "" {
+		defer resp.Body.Close()
+		rejectDesc := resp.Header.Get("X-Scrapfly-Reject-Description")
+		retryable := resp.Header.Get("X-Scrapfly-Reject-Retryable") == "true"
+		retryAfterMs := 0
+		if retryable {
+			if ra, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
+				retryAfterMs = ra * 1000 // Retry-After is in seconds
+			}
+		}
+		return nil, &APIError{
+			Message:        fmt.Sprintf("Proxified scrape error: %s — %s", rejectCode, rejectDesc),
+			Code:           rejectCode,
+			HTTPStatusCode: resp.StatusCode,
+			Retryable:      retryable,
+			RetryAfterMs:   retryAfterMs,
+		}
+	}
 	// Caller owns the body — do NOT defer resp.Body.Close() here.
 	return resp, nil
 }
