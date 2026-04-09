@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -32,13 +33,15 @@ type ScrapeResult struct {
 	// UUID is the unique identifier for this scrape request.
 	UUID string `json:"uuid"`
 
-	selector *goquery.Document // For lazy loading
+	selectorOnce sync.Once
+	selector     *goquery.Document
+	selectorErr  error
 }
 
 // Selector provides a goquery document for parsing HTML content.
 //
-// The selector is lazy-loaded and cached, making it efficient to call
-// multiple times. It can only be used with HTML content.
+// The selector is lazy-loaded and cached using sync.Once, making it safe
+// for concurrent use. It can only be used with HTML content.
 //
 // Example:
 //
@@ -55,21 +58,19 @@ type ScrapeResult struct {
 //	title := doc.Find("title").First().Text()
 //	fmt.Println(title)
 func (r *ScrapeResult) Selector() (*goquery.Document, error) {
-	if r.selector != nil {
-		return r.selector, nil
-	}
-
-	if !strings.Contains(r.Result.ContentType, "text/html") {
-		return nil, fmt.Errorf("%w: cannot use selector on non-html content-type, got %s", ErrContentType, r.Result.ContentType)
-	}
-
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(r.Result.Content))
-	if err != nil {
-		return nil, err
-	}
-
-	r.selector = doc
-	return r.selector, nil
+	r.selectorOnce.Do(func() {
+		if !strings.Contains(r.Result.ContentType, "text/html") {
+			r.selectorErr = fmt.Errorf("%w: cannot use selector on non-html content-type, got %s", ErrContentType, r.Result.ContentType)
+			return
+		}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(r.Result.Content))
+		if err != nil {
+			r.selectorErr = err
+			return
+		}
+		r.selector = doc
+	})
+	return r.selector, r.selectorErr
 }
 
 // ExtractionResult represents the result of a data extraction request.
@@ -130,14 +131,17 @@ type ConfigData struct {
 	JS              *string             `json:"js"`
 	RenderingWait   int                 `json:"rendering_wait"`
 	WaitForSelector *string             `json:"wait_for_selector"`
-	Screenshots     map[string]string   `json:"screenshots"`
-	WebhookName     *string             `json:"webhook_name"`
+	Screenshots      map[string]string   `json:"screenshots"`
+	ScreenshotFlags  []string            `json:"screenshot_flags"`
+	WebhookName      *string             `json:"webhook_name"`
 	Timeout         int                 `json:"timeout"`
 	JSScenario      interface{}         `json:"js_scenario"`
 	Extract         interface{}         `json:"extract"`
 	Lang            []string            `json:"lang"`
 	OS              *string             `json:"os"`
 	AutoScroll      bool                `json:"auto_scroll"`
+	CostBudget      *int                `json:"cost_budget"`
+	RenderingStage  string              `json:"rendering_stage"`
 	Env             string              `json:"env"`
 	Origin          string              `json:"origin"`
 	Project         string              `json:"project"`

@@ -99,13 +99,17 @@ func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
 	if key == "" {
 		return nil, ErrBadAPIKey
 	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if !verifySSL {
-		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	return &Client{
-		key:        key,
-		host:       host,
-		httpClient: &http.Client{Timeout: 150 * time.Second},
+		key:  key,
+		host: host,
+		httpClient: &http.Client{
+			Timeout:   150 * time.Second,
+			Transport: transport,
+		},
 	}, nil
 }
 
@@ -226,6 +230,32 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
+	}
+
+	// HEAD responses have no body per HTTP spec — the API returns headers
+	// only. Build a ScrapeResult from HTTP response headers and the local
+	// config, mirroring the Python SDK's HEAD handler.
+	if method == "HEAD" {
+		respHeaders := make(map[string]interface{})
+		for k, v := range resp.Header {
+			if len(v) > 0 {
+				respHeaders[strings.ToLower(k)] = v[0]
+			}
+		}
+		return &ScrapeResult{
+			Result: ResultData{
+				StatusCode:      resp.StatusCode,
+				Content:         "",
+				Format:          "text",
+				Success:         true,
+				Status:          "DONE",
+				ResponseHeaders: respHeaders,
+			},
+			Config: ConfigData{
+				URL:    config.URL,
+				Method: "HEAD",
+			},
+		}, nil
 	}
 
 	var result ScrapeResult

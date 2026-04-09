@@ -62,6 +62,8 @@ type ExtractionConfig struct {
 	DocumentCompressionFormat CompressionFormat
 	// Webhook is the name of a webhook to call after extraction completes.
 	Webhook string
+	// Timeout is the maximum time in seconds for extraction processing.
+	Timeout int
 }
 
 // toAPIParams converts the ExtractionConfig into URL parameters for the Scrapfly API.
@@ -121,6 +123,9 @@ func (c *ExtractionConfig) toAPIParams() (url.Values, error) {
 
 	if c.Webhook != "" {
 		params.Set("webhook_name", c.Webhook)
+	}
+	if c.Timeout > 0 {
+		params.Set("timeout", fmt.Sprint(c.Timeout))
 	}
 
 	return params, nil

@@ -112,6 +112,14 @@ type ScrapeConfig struct {
 	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
 	// Invalid values are silently dropped by the server.
 	BrowserBrand string
+	// CostBudget limits the maximum API credit cost for ASP retries.
+	// ASP dynamically upgrades proxy/browser to bypass protection; this caps spending.
+	CostBudget int
+	// Geolocation spoofs the browser's geolocation. Format: "latitude,longitude".
+	Geolocation string
+	// RenderingStage controls when the browser considers the page loaded (requires RenderJS).
+	// Valid values: "complete" (default), "domcontentloaded".
+	RenderingStage string
 	// ProxifiedResponse returns the raw upstream response (target's status,
 	// headers, body) instead of the JSON envelope. When true, callers must
 	// use ScrapeProxified() instead of Scrape(), which returns *http.Response.
@@ -347,6 +355,15 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 	}
 	if c.ProxifiedResponse {
 		params.Set("proxified_response", "true")
+	}
+	if c.CostBudget > 0 {
+		params.Set("cost_budget", fmt.Sprint(c.CostBudget))
+	}
+	if c.Geolocation != "" {
+		params.Set("geolocation", c.Geolocation)
+	}
+	if c.RenderingStage != "" && c.RenderingStage != "complete" {
+		params.Set("rendering_stage", c.RenderingStage)
 	}
 
 	if c.Format != "" {
