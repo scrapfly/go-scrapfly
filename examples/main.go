@@ -430,6 +430,40 @@ func crawlerQuickstart(apiKey string) {
 	fmt.Println("\n🎉 done")
 }
 
+// monitoringMetrics demonstrates the Monitoring API (Enterprise plan only).
+// See https://scrapfly.io/docs/monitoring#api
+func monitoringMetrics(apiKey string) {
+	client, err := scrapfly.New(apiKey)
+	if err != nil {
+		log.Fatalf("failed to create client: %v", err)
+	}
+
+	accountStats, err := client.GetMonitoringMetrics(scrapfly.MonitoringMetricsOptions{
+		Aggregation: []scrapfly.MonitoringAggregation{scrapfly.MonitoringAggregationAccount},
+		Period:      scrapfly.MonitoringPeriodLast24h,
+	})
+	if err != nil {
+		log.Fatalf("failed to get monitoring metrics: %v", err)
+	}
+	fmt.Println("==== Account Metrics ====")
+	accountJSON, _ := json.MarshalIndent(accountStats["account_metrics"], "", "  ")
+	fmt.Println(string(accountJSON))
+
+	end := time.Now().UTC()
+	start := end.Add(-24 * time.Hour)
+	targetStats, err := client.GetMonitoringTargetMetrics(scrapfly.MonitoringTargetMetricsOptions{
+		Domain: "httpbin.dev",
+		Start:  start,
+		End:    end,
+	})
+	if err != nil {
+		log.Fatalf("failed to get target metrics: %v", err)
+	}
+	fmt.Println("==== Target Metrics on httpbin.dev ====")
+	targetJSON, _ := json.MarshalIndent(targetStats, "", "  ")
+	fmt.Println(string(targetJSON))
+}
+
 func main() {
 	// You can enable debug logs to see more details
 	scrapfly.DefaultLogger.SetLevel(scrapfly.LevelDebug)
@@ -447,6 +481,7 @@ func main() {
 		fmt.Println("  screenshot            - Capture screenshots using Screenshot API")
 		fmt.Println("  downloadFile          - Download files using Browser Data Capture")
 		fmt.Println("  crawlerQuickstart     - Schedule a small crawl, read content, and download WARC")
+		fmt.Println("  monitoringMetrics     - Query Monitoring API aggregates (Enterprise plan)")
 		return
 	}
 
@@ -465,6 +500,7 @@ func main() {
 		"screenshot":            screenshot,
 		"downloadFile":          downloadFile,
 		"crawlerQuickstart":     crawlerQuickstart,
+		"monitoringMetrics":     monitoringMetrics,
 	}
 
 	fn, exists := functions[functionName]
