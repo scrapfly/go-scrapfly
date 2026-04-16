@@ -148,13 +148,15 @@ type UnblockConfig struct {
 	Country        string `json:"country,omitempty"`
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
+	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
 }
 
 // UnblockResult is the response from the /unblock endpoint.
 type UnblockResult struct {
-	WSURL     string `json:"ws_url"`
-	SessionID string `json:"session_id"`
-	RunID     string `json:"run_id"`
+	WSURL       string `json:"ws_url"`
+	SessionID   string `json:"session_id"`
+	RunID       string `json:"run_id"`
+	MCPEndpoint string `json:"mcp_endpoint,omitempty"` // MCP streamable-HTTP endpoint (only when EnableMCP=true)
 }
 
 // cloudBrowserRESTHost returns the configured cloud browser host normalized to
