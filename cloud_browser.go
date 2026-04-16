@@ -47,6 +47,10 @@ type CloudBrowserConfig struct {
 	// Requires a Custom plan subscription.
 	// See https://scrapfly.io/docs/cloud-browser-api/byop for details.
 	BYOPProxy string `json:"byop_proxy,omitempty"`
+
+	// EnableMCP enables Chromium's built-in Model Context Protocol (MCP) support.
+	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
+	EnableMCP bool `json:"enable_mcp,omitempty"`
 }
 
 // WebSocketURL returns the Cloud Browser WebSocket connection URL.
@@ -107,6 +111,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 		if config.BYOPProxy != "" {
 			params.Set("byop_proxy", config.BYOPProxy)
+		}
+		if config.EnableMCP {
+			params.Set("enable_mcp", "true")
 		}
 	}
 
