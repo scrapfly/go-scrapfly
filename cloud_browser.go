@@ -48,7 +48,7 @@ type CloudBrowserConfig struct {
 	// See https://scrapfly.io/docs/cloud-browser-api/byop for details.
 	BYOPProxy string `json:"byop_proxy,omitempty"`
 
-	// EnableMCP enables Chromium's built-in Model Context Protocol (MCP) support.
+	// EnableMCP enables Scrapium's built-in Model Context Protocol (MCP) support.
 	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
 	EnableMCP bool `json:"enable_mcp,omitempty"`
 }
