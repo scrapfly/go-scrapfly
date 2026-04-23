@@ -51,6 +51,16 @@ type CloudBrowserConfig struct {
 	// EnableMCP enables Scrapium's built-in Model Context Protocol (MCP) support.
 	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
 	EnableMCP bool `json:"enable_mcp,omitempty"`
+
+	// SolveCaptcha arms Scrapium's built-in captcha detector + solver on the
+	// first page attach. Turnstile, DataDome slider, reCAPTCHA, GeeTest,
+	// PerimeterX hold, and puzzle-click captchas are handled automatically —
+	// no extra CDP calls from the client.
+	//
+	// Billed per solve (5 credits for interaction-based, 20 for token-based);
+	// a failed attempt (captchaError) costs nothing.
+	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
+	SolveCaptcha bool `json:"solve_captcha,omitempty"`
 }
 
 // WebSocketURL returns the Cloud Browser WebSocket connection URL.
@@ -115,6 +125,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		if config.EnableMCP {
 			params.Set("enable_mcp", "true")
 		}
+		if config.SolveCaptcha {
+			params.Set("solve_captcha", "true")
+		}
 	}
 
 	// Normalize `host` to a wss:// URL regardless of the scheme the caller
@@ -149,6 +162,7 @@ type UnblockConfig struct {
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
 	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
+	SolveCaptcha   bool   `json:"solve_captcha,omitempty"`   // Arm the captcha solver on the post-unblock session
 }
 
 // UnblockResult is the response from the /unblock endpoint.
