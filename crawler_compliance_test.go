@@ -23,14 +23,14 @@
 // Required env vars:
 //
 //	SCRAPFLY_API_KEY        Dev API key (e.g. scp-live-...)
-//	SCRAPFLY_API_HOST       Local Scrapfly API (default: https://api.scrapfly.home)
+//	SCRAPFLY_API_HOST       Local Scrapfly API (default: https://api.scrapfly.local)
 //
 // Optional:
 //
 //	WEB_SCRAPING_DEV_BASE   Trap app base URL.
 //	                        Default: https://web-scraping.dev (public prod).
-//	                        Override to https://web-scraping-dev.home for the
-//	                        local k3d cluster.
+//	                        Override to https://web-scraping-dev.local for the
+//	                        local self-hosted dev cluster.
 //
 // Run:
 //
@@ -61,7 +61,7 @@ func complianceTargetBase() string {
 }
 
 // trapHTTPClient returns an http.Client that skips TLS verification — the
-// local k3d Traefik certs are self-signed. Do NOT use this against prod.
+// local self-hosted dev cluster ingress certs are self-signed. Do NOT use this against prod.
 func trapHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 15 * time.Second,
