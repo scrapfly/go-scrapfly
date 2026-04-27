@@ -1,0 +1,2967 @@
+=== github.com/scrapfly/go-scrapfly ===
+package scrapfly // import "github.com/scrapfly/go-scrapfly"
+
+Package scrapfly provides a Go SDK for the Scrapfly.io web scraping API.
+
+Scrapfly is a comprehensive web scraping API that handles proxies,
+browser rendering, anti-bot protection, and more. This SDK provides a simple
+and idiomatic Go interface to interact with the Scrapfly API for various web
+scraping tasks.
+
+# Features
+
+  - Web scraping with automatic proxy rotation
+  - JavaScript rendering with headless browsers
+  - Anti-bot protection (ASP) bypass
+  - Screenshot capture with multiple formats
+  - AI-powered structured data extraction
+  - Session management for persistent browsing
+  - Concurrent scraping with rate limiting
+  - Caching and webhook support
+
+# Installation
+
+    go get github.com/scrapfly/go-scrapfly
+
+# Quick Start
+
+Create a client and perform a simple scrape:
+
+    package main
+
+    import (
+        "fmt"
+        "log"
+        "github.com/scrapfly/go-scrapfly"
+    )
+
+    func main() {
+        // Create a new client
+        client, err := scrapfly.New("YOUR_API_KEY")
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        // Configure the scrape request
+        config := &scrapfly.ScrapeConfig{
+            URL:      "https://example.com",
+            RenderJS: true,
+            Country:  "us",
+        }
+
+        // Perform the scrape
+        result, err := client.Scrape(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        // Access the content
+        fmt.Println(result.Result.Content)
+
+        // Or use the built-in HTML parser
+        doc, err := result.Selector()
+        if err != nil {
+            log.Fatal(err)
+        }
+        title := doc.Find("title").First().Text()
+        fmt.Println("Title:", title)
+    }
+
+# Advanced Features
+
+JavaScript Rendering:
+
+    config := &scrapfly.ScrapeConfig{
+        URL:             "https://example.com",
+        RenderJS:        true,
+        WaitForSelector: ".content",
+        RenderingWait:   2000,
+        AutoScroll:      true,
+    }
+
+Taking Screenshots:
+
+    config := &scrapfly.ScreenshotConfig{
+        URL:        "https://example.com",
+        Format:     scrapfly.FormatPNG,
+        Capture:    "fullpage",
+        Resolution: "1920x1080",
+    }
+    result, err := client.Screenshot(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+    filePath, err := client.SaveScreenshot(result, "screenshot")
+
+Concurrent Scraping:
+
+    configs := []*scrapfly.ScrapeConfig{
+        {URL: "https://example.com/page1"},
+        {URL: "https://example.com/page2"},
+        {URL: "https://example.com/page3"},
+    }
+    resultsChan := client.ConcurrentScrape(configs, 3)
+    for result := range resultsChan {
+        if result.error != nil {
+            log.Printf("Error: %v", result.error)
+            continue
+        }
+        // Process result
+    }
+
+AI Data Extraction:
+
+    config := &scrapfly.ExtractionConfig{
+        Body:             []byte("<html>...</html>"),
+        ContentType:      "text/html",
+        ExtractionPrompt: "Extract product name, price, and description",
+    }
+    result, err := client.Extract(config)
+
+# Error Handling
+
+The SDK uses sentinel errors that can be checked with errors.Is():
+
+    result, err := client.Scrape(config)
+    if err != nil {
+        if errors.Is(err, scrapfly.ErrUpstreamClient) {
+            // Target website returned 4xx error
+        } else if errors.Is(err, scrapfly.ErrProxyFailed) {
+            // Proxy connection failed
+        } else if apiErr, ok := err.(*scrapfly.APIError); ok {
+            // Get detailed API error information
+            fmt.Printf("Status: %d, Message: %s\n", apiErr.HTTPStatusCode, apiErr.Message)
+        }
+    }
+
+# Debugging
+
+Enable debug logging to see detailed request information:
+
+    scrapfly.DefaultLogger.SetLevel(scrapfly.LevelDebug)
+
+Enable debug mode in the API to access debug information in the dashboard:
+
+    config := &scrapfly.ScrapeConfig{
+        URL:   "https://example.com",
+        Debug: true,
+    }
+
+# Documentation
+
+For more information, visit:
+  - API Documentation: https://scrapfly.io/docs
+  - Web Scraping Guides: https://scrapfly.io/blog/tag/scrapeguide/
+  - Dashboard: https://scrapfly.io/dashboard
+
+CONSTANTS
+
+const (
+	CrawlerStatusPending   = "PENDING"
+	CrawlerStatusRunning   = "RUNNING"
+	CrawlerStatusDone      = "DONE"
+	CrawlerStatusCancelled = "CANCELLED"
+)
+    Crawler status values returned by GET /crawl/{uuid}/status.
+
+    Note: there is no "COMPLETED" or "FAILED" status — a finished crawl is
+    always status=DONE, and success vs. failure is signaled by is_success.
+    CANCELLED is a separate terminal state set when the user cancels the job.
+
+const (
+	CrawlerStopNoMoreURLs      = "no_more_urls"
+	CrawlerStopPageLimit       = "page_limit"
+	CrawlerStopMaxDuration     = "max_duration"
+	CrawlerStopMaxAPICredit    = "max_api_credit"
+	CrawlerStopSeedURLFailed   = "seed_url_failed"
+	CrawlerStopUserCancelled   = "user_cancelled"
+	CrawlerStopCrawlerError    = "crawler_error"
+	CrawlerStopNoAPICreditLeft = "no_api_credit_left"
+	CrawlerStopStorageError    = "storage_error"
+)
+    Documented values for CrawlerState.StopReason.
+
+
+VARIABLES
+
+var (
+	// ErrBadAPIKey indicates an invalid or empty API key was provided.
+	ErrBadAPIKey = errors.New("invalid key, must be a non-empty string")
+
+	// ErrScrapeConfig indicates invalid scrape configuration.
+	ErrScrapeConfig = errors.New("invalid scrape config")
+
+	// ErrScreenshotConfig indicates invalid screenshot configuration.
+	ErrScreenshotConfig = errors.New("invalid screenshot config")
+
+	// ErrExtractionConfig indicates invalid extraction configuration.
+	ErrExtractionConfig = errors.New("invalid extraction config")
+
+	// ErrContentType indicates an invalid content type for the requested operation.
+	ErrContentType = errors.New("invalid content type for this operation")
+
+	// ErrTooManyRequests indicates rate limiting is in effect.
+	ErrTooManyRequests = errors.New("too many requests")
+
+	// ErrQuotaLimitReached indicates the account quota has been exceeded.
+	ErrQuotaLimitReached = errors.New("quota limit reached")
+
+	// ErrScreenshotAPIFailed indicates a screenshot API error occurred.
+	ErrScreenshotAPIFailed = errors.New("screenshot API error")
+
+	// ErrExtractionAPIFailed indicates an extraction API error occurred.
+	ErrExtractionAPIFailed = errors.New("extraction API error")
+
+	// ErrUpstreamClient indicates a 4xx error from the target website.
+	ErrUpstreamClient = errors.New("upstream http client error")
+
+	// ErrUpstreamServer indicates a 5xx error from the target website.
+	ErrUpstreamServer = errors.New("upstream http server error")
+
+	// ErrAPIClient indicates a 4xx error from the Scrapfly API.
+	ErrAPIClient = errors.New("API http client error")
+
+	// ErrAPIServer indicates a 5xx error from the Scrapfly API.
+	ErrAPIServer = errors.New("API http server error")
+
+	// ErrScrapeFailed indicates the scraping operation failed.
+	ErrScrapeFailed = errors.New("scrape failed")
+
+	// ErrProxyFailed indicates a proxy connection error.
+	ErrProxyFailed = errors.New("proxy error")
+
+	// ErrASPBypassFailed indicates Anti-Scraping Protection bypass failed.
+	ErrASPBypassFailed = errors.New("ASP bypass error")
+
+	// ErrScheduleFailed indicates a scheduled job error.
+	ErrScheduleFailed = errors.New("schedule error")
+
+	// ErrWebhookFailed indicates a webhook delivery error.
+	ErrWebhookFailed = errors.New("webhook error")
+
+	// ErrSessionFailed indicates a browser session error.
+	ErrSessionFailed = errors.New("session error")
+
+	// ErrUnhandledAPIResponse indicates an unexpected API error response.
+	ErrUnhandledAPIResponse = errors.New("unhandled API error response")
+
+	// ErrCrawlerConfig indicates invalid crawler configuration.
+	ErrCrawlerConfig = errors.New("invalid crawler config")
+
+	// ErrCrawlerFailed indicates a crawler API error (e.g. ERR::CRAWLER::*).
+	ErrCrawlerFailed = errors.New("crawler error")
+
+	// ErrCrawlerNotStarted indicates Crawl helper methods were called before Start().
+	ErrCrawlerNotStarted = errors.New("crawler not started, call Start() first")
+
+	// ErrCrawlerAlreadyStarted indicates Crawl.Start() was called twice.
+	ErrCrawlerAlreadyStarted = errors.New("crawler already started")
+
+	// ErrCrawlerTimeout indicates Crawl.Wait() exceeded the caller's deadline.
+	ErrCrawlerTimeout = errors.New("crawler wait timed out")
+
+	// ErrCrawlerCancelled indicates Crawl.Wait() observed a CANCELLED terminal state.
+	ErrCrawlerCancelled = errors.New("crawler was cancelled")
+
+	// ErrUnexpectedResponseFormat indicates the server returned a Content-Type the SDK didn't expect.
+	// Used for example when GET /crawl/{uuid}/urls returns JSON instead of streaming text.
+	ErrUnexpectedResponseFormat = errors.New("unexpected response format")
+)
+    Sentinel errors for the Scrapfly client. These errors can be used with
+    errors.Is() for error checking.
+
+var DefaultLogger = NewLogger("scrapfly")
+    DefaultLogger is the default logger used by the Scrapfly SDK.
+
+    You can configure the log level to control verbosity:
+
+        scrapfly.DefaultLogger.SetLevel(scrapfly.LevelDebug)
+
+
+FUNCTIONS
+
+func BoolPtr(v bool) *bool
+    BoolPtr is a tiny helper for constructing *bool tri-state fields.
+
+        config := &scrapfly.CrawlerConfig{
+            URL:               "https://example.com",
+            RespectRobotsTxt:  scrapfly.BoolPtr(false),
+            FollowInternalSubdomains: scrapfly.BoolPtr(true),
+        }
+
+func GetAnyEnumFor[V Enumerable[T], T fmt.Stringer]() []any
+func GetEnumFor[V Enumerable[T], T fmt.Stringer]() []T
+func IsValidEnumType[T fmt.Stringer](f T) bool
+func ValidateEnums(s interface{}) error
+    ValidateEnums checks fields tagged with `validate:"enum"`. It calls the
+    IsValid() bool method on the field if it's a single value, or on each
+    element if it's a slice.
+
+func ValidateExclusiveFields(s interface{}) error
+    ValidateExclusiveFields checks a struct for fields marked with the
+    "exclusive" tag and ensures that only one field per exclusive group is set.
+
+func ValidateRequiredFields(s interface{}) error
+    ValidateRequiredFields checks a struct for fields with the `required:"true"`
+    tag and returns an error if any of them are zero-valued.
+
+
+TYPES
+
+type APIError struct {
+	// Message is the human-readable error message.
+	Message string
+	// Code is the error code identifier.
+	Code string
+	// HTTPStatusCode is the HTTP status code of the response.
+	HTTPStatusCode int
+	// Retryable indicates whether the caller should retry this request.
+	Retryable bool
+	// DocumentationURL provides a link to relevant documentation.
+	DocumentationURL string
+	// APIResponse contains the full API response (if available).
+	APIResponse *ScrapeResult
+	// RetryAfterMs indicates how long to wait before retrying (for rate limits).
+	RetryAfterMs int
+	// Hint provides additional context or suggestions for resolving the error.
+	Hint string
+}
+    APIError represents a detailed error returned by the Scrapfly API.
+
+    It contains information about the error including status codes, error
+    messages, documentation links, and retry information.
+
+func (e *APIError) Error() string
+    Error implements the error interface.
+
+type APIErrorDetails struct {
+	Code      string            `json:"code"`
+	HTTPCode  int               `json:"http_code"`
+	Links     map[string]string `json:"links"`
+	Message   string            `json:"message"`
+	Retryable bool              `json:"retryable"`
+	DocURL    string            `json:"doc_url"`
+}
+    APIErrorDetails contains detailed error information from the API.
+
+type Account struct {
+	AccountID        string `json:"account_id"`
+	Currency         string `json:"currency"`
+	Timezone         string `json:"timezone"`
+	Suspended        bool   `json:"suspended"`
+	SuspensionReason string `json:"suspension_reason"`
+}
+    --- Account Data Structures ---
+
+type AccountData struct {
+	Account      Account      `json:"account"`
+	Project      Project      `json:"project"`
+	Subscription Subscription `json:"subscription"`
+}
+    AccountData represents detailed account information from Scrapfly.
+
+    This includes subscription details, usage statistics, billing information,
+    and account limits.
+
+type Attachment struct {
+	Content           string `json:"content"`
+	ContentType       string `json:"content_type"`
+	Filename          string `json:"filename"`
+	ID                string `json:"id"`
+	Size              int    `json:"size"`
+	State             string `json:"state"`
+	SuggestedFilename string `json:"suggested_filename"`
+	URL               string `json:"url"`
+
+	// Has unexported fields.
+}
+
+func (a *Attachment) Data() ([]byte, error)
+    Data returns the attachment data as a byte slice.
+
+func (a *Attachment) Save(savePath ...string) (string, error)
+    Save saves a scraped attachment result to disk.
+
+    Parameters:
+      - savePath: Optional directory path where to save the file (defaults to
+        current directory) (if savePath does not exists, it will be created in a
+        best effort basis)
+
+    it is named as the filename of the attachment Returns the full path to the
+    saved file.
+
+    Example:
+
+        filePath, err := a.Save("./attachments")
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Printf("Attachment %s saved to: %s\n", a.Filename, filePath)
+
+type BatchFormat int
+    BatchFormat selects the per-part body encoding on the wire. JSON is the
+    default; Msgpack produces slightly smaller payloads and matches the Scrapfly
+    API's msgpack negotiation used by the Python SDK.
+
+const (
+	BatchFormatJSON BatchFormat = iota
+	BatchFormatMsgpack
+)
+type BatchOptions struct {
+	Format BatchFormat
+}
+    BatchOptions carries optional knobs for ScrapeBatchWithOptions. Zero value =
+    JSON parts (default), same as the simple ScrapeBatch.
+
+type BatchResult struct {
+	CorrelationID     string
+	Result            *ScrapeResult
+	ProxifiedResponse *http.Response
+	Err               error
+}
+    BatchResult wraps a single scrape's outcome within a batch response. Exactly
+    one of Result, ProxifiedResponse, or Err is non-nil. CorrelationID matches
+    the value the caller set on the originating ScrapeConfig.
+
+    ProxifiedResponse is populated when the originating ScrapeConfig had
+    ProxyResponse=true — the batch part's body is the raw upstream response
+    (HTML, JSON, binary, etc.) and Upstream response headers / status are
+    available on the *http.Response. This mirrors the single-scrape Scrape() →
+    ScrapeProxified() split.
+
+type BrowserData struct {
+	JSEvaluationResult *string                `json:"javascript_evaluation_result"`
+	JSScenario         interface{}            `json:"js_scenario"`
+	LocalStorageData   map[string]interface{} `json:"local_storage_data"`
+	SessionStorageData map[string]interface{} `json:"session_storage_data"`
+	Websockets         []interface{}          `json:"websockets"`
+	XHRCall            []interface{}          `json:"xhr_call"`
+	Attachments        []Attachment           `json:"attachments"`
+}
+    BrowserData contains data collected from the browser during JavaScript
+    rendering.
+
+type CacheContext struct {
+	State string      `json:"state"`
+	Entry interface{} `json:"entry"`
+}
+    CacheContext contains information about cache usage for the request.
+
+type ClassifyRequest struct {
+	URL        string            `json:"url"`
+	StatusCode int               `json:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       string            `json:"body,omitempty"`
+	Method     string            `json:"method,omitempty"`
+}
+    ClassifyRequest describes an HTTP response the caller wants the Scrapfly
+    classification engine to evaluate for blocking signals.
+
+type ClassifyResult struct {
+	Blocked bool   `json:"blocked"`
+	Antibot string `json:"antibot,omitempty"`
+	Cost    int    `json:"cost"`
+}
+    ClassifyResult is the response from /classify.
+
+type Client struct {
+	// Has unexported fields.
+}
+    Client is the main client for interacting with the Scrapfly API. It handles
+    authentication, request execution, and response parsing.
+
+func New(key string) (*Client, error)
+    New creates a new Scrapfly client with the provided API key. The API key can
+    be obtained from https://scrapfly.io/dashboard.
+
+    Example:
+
+        client, err := scrapfly.New("YOUR_API_KEY")
+        if err != nil {
+            log.Fatal(err)
+        }
+
+func NewWithHost(key, host string, verifySSL bool) (*Client, error)
+    NewWithHost creates a new Scrapfly client with a custom API host. This is
+    useful for enterprise deployments or testing against a custom endpoint.
+
+    Parameters:
+      - key: Your Scrapfly API key
+      - host: Custom API host URL (e.g., "https://custom-api.example.com")
+      - verifySSL: Whether to verify SSL certificates (set to false only for
+        testing)
+
+    Example:
+
+        client, err := scrapfly.NewWithHost("YOUR_API_KEY", "https://custom-api.example.com", true)
+
+func (c *Client) APIKey() string
+    APIKey returns the currently configured API key.
+
+func (c *Client) Account() (*AccountData, error)
+    Account retrieves information about the current Scrapfly account.
+
+    Returns account details including:
+      - Subscription plan and limits
+      - API usage statistics
+      - Billing information
+      - Concurrency limits
+
+    Example:
+
+        account, err := client.Account()
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Printf("Plan: %s\n", account.Subscription.PlanName)
+        fmt.Printf("Remaining requests: %d\n", account.Subscription.Usage.Scrape.Remaining)
+
+func (c *Client) CancelSchedule(id string) error
+
+func (c *Client) Classify(ctx context.Context, req *ClassifyRequest) (*ClassifyResult, error)
+    Classify asks the Scrapfly classification endpoint whether the given
+    response looks blocked by an anti-bot product. Unlike Scrape, this does not
+    fetch anything — the response body is supplied by the caller. 1 API credit
+    per call. See https://scrapfly.io/docs/scrape-api/classify for the full
+    contract.
+
+func (c *Client) CloudBrowser(config *CloudBrowserConfig) string
+    WebSocketURL returns the Cloud Browser WebSocket connection URL.
+
+func (c *Client) CloudBrowserExtensionDelete(extensionID string) (map[string]interface{}, error)
+    CloudBrowserExtensionDelete deletes a browser extension by ID.
+
+func (c *Client) CloudBrowserExtensionGet(extensionID string) (map[string]interface{}, error)
+    CloudBrowserExtensionGet returns details of a specific extension.
+
+func (c *Client) CloudBrowserExtensionList() (map[string]interface{}, error)
+    CloudBrowserExtensionList lists all browser extensions for the account.
+
+func (c *Client) CloudBrowserExtensionUpload(filePath string) (map[string]interface{}, error)
+    CloudBrowserExtensionUpload uploads a browser extension from a local .zip or
+    .crx file.
+
+func (c *Client) CloudBrowserPlayback(runID string) (map[string]interface{}, error)
+    CloudBrowserPlayback returns debug recording metadata for a given run ID.
+
+func (c *Client) CloudBrowserSessionStop(sessionID string) error
+    CloudBrowserSessionStop terminates a browser session.
+
+func (c *Client) CloudBrowserSessions() (map[string]interface{}, error)
+    CloudBrowserSessions lists all running Cloud Browser sessions.
+
+func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, error)
+    CloudBrowserUnblock bypasses anti-bot protection and returns a WebSocket URL
+    to a browser with cookies/state pre-loaded.
+
+func (c *Client) CloudBrowserVideo(runID string) ([]byte, error)
+    CloudBrowserVideo downloads a debug session recording video. Returns the raw
+    video bytes (webm format).
+
+func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan ConcurrentScrapeResult
+            if item.Error != nil {
+                log.Printf("Error: %v", item.Error)
+                continue
+            }
+            fmt.Println(item.Result.Result.Content)
+        }
+
+func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*CrawlerArtifact, error)
+    CrawlArtifact downloads a crawler job's WARC or HAR artifact.
+
+    `GET /crawl/{uuid}/artifact?type=warc|har` — returns raw bytes wrapped in
+    a CrawlerArtifact. The SDK does NOT bundle WARC/HAR parsers; use a library
+    like nlnwa/gowarc to walk the records.
+
+func (c *Client) CrawlCancel(uuid string) error
+    CrawlCancel cancels a running crawler job.
+
+    `POST /crawl/{uuid}/cancel` — proxied through to the scrape-engine's
+    internal cancel endpoint after the API verifies job ownership. Calling
+    cancel on a job that has already finished (DONE/CANCELLED) is a no-op.
+
+    Returns nil on success. Wraps any `ERR::CRAWLER::*` response with
+    ErrCrawlerFailed so callers can switch on errors.Is().
+
+func (c *Client) CrawlContentsBatch(uuid string, urls []string, formats []CrawlerContentFormat) (map[string]map[string]string, error)
+    CrawlContentsBatch retrieves content for up to 100 URLs in a single
+    round-trip. Returns a map of url → format → content.
+
+    `POST /crawl/{uuid}/contents/batch` — the request body is a newline-
+    separated list of URLs (text/plain). The response is a multipart/related
+    (RFC 2387) document with one part per found URL.
+
+    Formats may be any subset of the documented content formats. Each returned
+    URL will have an inner map with only the formats the server found.
+
+func (c *Client) CrawlContentsJSON(uuid string, format CrawlerContentFormat, opts *CrawlContentsOptions) (*CrawlerContents, error)
+    CrawlContents fetches crawled content for a job.
+
+    Two modes (selected by Plain):
+
+     1. Bulk JSON (Plain=false, default): returns *CrawlerContents with a
+        {contents: {url: {format: content}}, links} envelope.
+     2. Plain single-URL (Plain=true): returns a string containing the raw
+        content for the given URL/format. Requires URL to be set.
+
+    Returns either (*CrawlerContents, nil) or ("plain string", nil). Callers
+    should type-assert on the interface{} return. Go's lack of sum types makes
+    this awkward — use CrawlContentsJSON or CrawlContentsPlain directly when you
+    know which mode you want.
+
+    Example:
+
+        contents, err := client.CrawlContentsJSON(uuid, scrapfly.CrawlerFormatMarkdown, nil)
+        md, err := client.CrawlContentsPlain(uuid, "https://example.com/page", scrapfly.CrawlerFormatMarkdown)
+
+func (c *Client) CrawlContentsPlain(uuid, targetURL string, format CrawlerContentFormat) (string, error)
+    CrawlContentsPlain fetches the raw content for a single crawled URL in
+    "plain" mode. Returns the body as a string (no JSON wrapping).
+
+    The Accept header is set to `*/*` since the server picks the
+    content-type based on the format (text/markdown, text/html, text/plain,
+    application/json).
+
+func (c *Client) CrawlStatus(uuid string) (*CrawlerStatus, error)
+    CrawlStatus fetches the current status of a crawler job.
+
+    `GET /crawl/{uuid}/status` — returns a strictly-validated CrawlerStatus.
+    The caller can use IsRunning/IsComplete/IsFailed/IsCancelled to check state
+    transitions.
+
+func (c *Client) CrawlURLs(uuid string, opts *CrawlURLsOptions) (*CrawlerURLs, error)
+    CrawlURLs lists crawled URLs for a job, streaming the response as text.
+
+    `GET /crawl/{uuid}/urls` — the server returns `text/plain` with one record
+    per line. JSON is intentionally NOT used: this endpoint is expected to scale
+    to millions of records per job where JSON would be too expensive.
+
+    Wire format:
+      - `visited` / `pending` → one URL per line
+      - `failed` / `skipped` → `url,reason` per line
+
+    Pagination: the wire protocol carries no global total count. Request further
+    pages by incrementing Page until an empty response.
+
+func (c *Client) CreateCrawlerSchedule(crawlerConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+
+func (c *Client) CreateScrapeSchedule(scrapeConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+
+func (c *Client) CreateScreenshotSchedule(screenshotConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+
+func (c *Client) ExecuteSchedule(id string) (*Schedule, error)
+
+func (c *Client) Extract(config *ExtractionConfig) (*ExtractionResult, error)
+    Extract performs AI-powered structured data extraction from HTML content.
+
+    This method uses Scrapfly's AI extraction capabilities to parse HTML and
+    extract structured data based on templates or prompts.
+
+    Example:
+
+        config := &scrapfly.ExtractionConfig{
+            Body:               []byte("<html>...</html>"),
+            ContentType:        "text/html",
+            ExtractionTemplate: "product",
+        }
+        result, err := client.Extract(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Printf("Extracted data: %+v\n", result.Data)
+
+func (c *Client) GetBrowserMonitoringMetrics(opts CloudBrowserMonitoringOptions) (map[string]any, error)
+
+func (c *Client) GetBrowserMonitoringTimeseries(opts CloudBrowserMonitoringOptions) (map[string]any, error)
+
+func (c *Client) GetCrawlerMonitoringMetrics(opts MonitoringMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetCrawlerMonitoringTargetMetrics(opts MonitoringTargetMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetExtractionMonitoringMetrics(opts MonitoringMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetExtractionMonitoringTargetMetrics(opts MonitoringTargetMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetMonitoringMetrics(opts MonitoringMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetMonitoringTargetMetrics(opts MonitoringTargetMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetSchedule(id string) (*Schedule, error)
+
+func (c *Client) GetScreenshotMonitoringMetrics(opts MonitoringMetricsOptions) (map[string]any, error)
+
+func (c *Client) GetScreenshotMonitoringTargetMetrics(opts MonitoringTargetMetricsOptions) (map[string]any, error)
+
+func (c *Client) HTTPClient() *http.Client
+    HTTPClient returns the *http.Client used by this Scrapfly client. Useful if
+    callers want to wrap the existing transport instead of replacing it.
+
+func (c *Client) ListCrawlerSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
+
+func (c *Client) ListSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
+
+func (c *Client) ListScrapeSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
+
+func (c *Client) ListScreenshotSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
+
+func (c *Client) PauseSchedule(id string) (*Schedule, error)
+
+func (c *Client) ResumeSchedule(id string) (*Schedule, error)
+
+func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
+    Scrape performs a web scraping request using the provided configuration.
+    This is the main method for scraping web pages with Scrapfly.
+
+    The method supports various features including:
+      - JavaScript rendering (RenderJS)
+      - Proxy rotation and geo-targeting
+      - Anti-bot protection (ASP)
+      - Custom headers and cookies
+      - Screenshot capture
+      - Data extraction
+
+    Example:
+
+        config := &scrapfly.ScrapeConfig{
+            URL:      "https://example.com",
+            RenderJS: true,
+            Country:  "us",
+            ASP:      true,
+        }
+        result, err := client.Scrape(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Println(result.Result.Content)
+
+func (c *Client) ScrapeBatch(configs []*ScrapeConfig) (<-chan BatchResult, error)
+    ScrapeBatch issues a POST /scrape/batch request with up to 100 configs
+    and streams per-scrape results through the returned channel as each
+    scrape completes. Results arrive OUT OF ORDER — match them back to their
+    originating config via CorrelationID.
+
+    Every ScrapeConfig MUST carry a unique CorrelationID. Missing / duplicate
+    values are caught client-side before the request is sent, so callers fail
+    fast on misconfiguration.
+
+    The returned channel is closed when the last part has been delivered (or the
+    stream ends due to error). Block on receive.
+
+    For msgpack wire encoding use ScrapeBatchWithOptions.
+
+func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptions) (<-chan BatchResult, error)
+    ScrapeBatchWithOptions is ScrapeBatch with explicit BatchOptions (e.g.
+    msgpack per-part encoding).
+
+func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error)
+    ConcurrentScrape performs multiple scraping requests concurrently with
+    controlled concurrency. This is useful for scraping multiple pages
+    efficiently while respecting rate limits.
+
+    Parameters:
+      - configs: A slice of ScrapeConfig objects to scrape
+      - concurrencyLimit: Maximum number of concurrent requests. If <= 0,
+        uses account's concurrent limit
+
+    Returns a channel that emits ConcurrentScrapeResult values as scrapes
+    complete. Each entry has either Result (success) or Error (failure) set.
+
+    Example:
+
+        configs := []*scrapfly.ScrapeConfig{
+            {URL: "https://example.com/page1"},
+            {URL: "https://example.com/page2"},
+            {URL: "https://example.com/page3"},
+        }
+        for item := range client.ConcurrentScrape(configs, 3) {
+
+    ScrapeProxified sends a scrape request with proxified_response=true and
+    returns the raw upstream *http.Response. The caller owns resp.Body (must
+    Close() it).
+
+    Unlike Scrape(), no JSON parsing occurs — the response body is the
+    target page's raw content, the status code is the upstream status, and
+    Scrapfly metadata is available on X-Scrapfly-* response headers (Api-Cost,
+    Content-Format, Log, etc).
+
+    Use this when you want Scrapfly to act like an HTTP proxy and your code
+    already knows how to handle raw HTTP responses.
+
+func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error)
+    Screenshot captures a screenshot of a web page using the provided
+    configuration.
+
+    Supports various features including:
+      - Multiple image formats (JPG, PNG, WEBP, GIF)
+      - Full page or element-specific capture
+      - Custom resolution
+      - Dark mode
+      - Banner blocking
+
+    Example:
+
+        config := &scrapfly.ScreenshotConfig{
+            URL:        "https://example.com",
+            Format:     scrapfly.FormatPNG,
+            Capture:    "fullpage",
+            Resolution: "1920x1080",
+        }
+        result, err := client.Screenshot(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+        // result.Image contains the screenshot bytes
+
+func (c *Client) SetAPIKey(key string)
+    SetAPIKey updates the API key for the client. This is useful for switching
+    between different API keys at runtime.
+
+func (c *Client) SetCloudBrowserHost(host string)
+    SetCloudBrowserHost overrides the default Cloud Browser host
+    (wss://browser.scrapfly.io). Useful for self-hosted or development
+    environments. When unset, CloudBrowser methods fall back to the public
+    production host.
+
+func (c *Client) SetHTTPClient(httpClient *http.Client)
+    SetHTTPClient replaces the underlying *http.Client used for all API calls.
+    This lets callers install a custom transport (e.g. for request logging,
+    tracing, tests, or a shared connection pool).
+
+    Passing nil is a no-op.
+
+    Example — install a RoundTripper that logs every request:
+
+        client, _ := scrapfly.New("YOUR_API_KEY")
+        client.SetHTTPClient(&http.Client{
+            Transport: &loggingTransport{base: http.DefaultTransport},
+            Timeout:   150 * time.Second,
+        })
+
+func (c *Client) StartCrawl(config *CrawlerConfig) (*CrawlerStartResponse, error)
+    StartCrawl schedules a new crawler job and returns the crawler UUID.
+
+    This corresponds to `POST /crawl`. The config is serialized as a JSON body
+    (not URL query params like Scrape) because the Crawler API takes a richer
+    structured config. The API key is still sent via the `key` query parameter.
+
+    Example:
+
+        config := &scrapfly.CrawlerConfig{
+            URL:            "https://web-scraping.dev/products",
+            PageLimit:      10,
+            ContentFormats: []scrapfly.CrawlerContentFormat{scrapfly.CrawlerFormatMarkdown},
+        }
+        start, err := client.StartCrawl(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Println("uuid:", start.CrawlerUUID)
+
+func (c *Client) UpdateSchedule(id string, req *UpdateScheduleRequest) (*Schedule, error)
+
+func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error)
+    VerifyAPIKey checks if the configured API key is valid. Returns a
+    VerifyAPIKeyResult indicating whether the key is valid.
+
+    Example:
+
+        result, err := client.VerifyAPIKey()
+        if err != nil {
+            log.Fatal(err)
+        }
+        if result.Valid {
+            fmt.Println("API key is valid")
+        }
+
+type CloudBrowserConfig struct {
+	ProxyPool    string   `json:"proxy_pool,omitempty"`
+	OS           string   `json:"os,omitempty"`
+	Country      string   `json:"country,omitempty"`
+	Session      string   `json:"session,omitempty"`
+	Timeout      int      `json:"timeout,omitempty"` // Session timeout in seconds (default 900)
+	BlockImages  bool     `json:"block_images,omitempty"`
+	BlockStyles  bool     `json:"block_styles,omitempty"`
+	BlockFonts   bool     `json:"block_fonts,omitempty"`
+	BlockMedia   bool     `json:"block_media,omitempty"`
+	Screenshot   bool     `json:"screenshot,omitempty"`
+	Cache        bool     `json:"cache,omitempty"`
+	Blacklist    bool     `json:"blacklist,omitempty"`
+	Debug        bool     `json:"debug,omitempty"`
+	Resolution   string   `json:"resolution,omitempty"`
+	Extensions   []string `json:"extensions,omitempty"`
+	BrowserBrand string   `json:"browser_brand,omitempty"`
+
+	// BYOPProxy is a "Bring Your Own Proxy" URL that the Cloud Browser will use
+	// instead of Scrapfly's managed proxy pools.
+	//
+	// Format: {protocol}://{user}:{pass}@{host}:{port}
+	// Supported protocols: http, https, socks5, socks5h, socks5+udp, socks5h+udp.
+	// The +udp variants enable HTTP/3 (QUIC) via SOCKS5 UDP ASSOCIATE — only
+	// works with proxy providers that implement RFC 1928 UDP ASSOCIATE.
+	//
+	// Requires a Custom plan subscription.
+	// See https://scrapfly.io/docs/cloud-browser-api/byop for details.
+	BYOPProxy string `json:"byop_proxy,omitempty"`
+
+	// EnableMCP enables Scrapium's built-in Model Context Protocol (MCP) support.
+	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
+	EnableMCP bool `json:"enable_mcp,omitempty"`
+
+	// SolveCaptcha arms Scrapium's built-in captcha detector + solver on the
+	// first page attach. Turnstile, DataDome slider, reCAPTCHA, GeeTest,
+	// PerimeterX hold, and puzzle-click captchas are handled automatically —
+	// no extra CDP calls from the client.
+	//
+	// Billed per solve (5 credits for interaction-based, 20 for token-based);
+	// a failed attempt (captchaError) costs nothing.
+	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
+	SolveCaptcha bool `json:"solve_captcha,omitempty"`
+}
+    CloudBrowserConfig configures a Cloud Browser session.
+
+type CloudBrowserMonitoringOptions struct {
+	Period    MonitoringPeriod
+	ProxyPool string
+	Start     time.Time
+	End       time.Time
+}
+    CloudBrowserMonitoringOptions configures Cloud Browser monitoring queries.
+    Cloud Browser is session-based with a distinct shape from the request-based
+    products (no domain/target, no include_webhook).
+
+type CompressionFormat string
+    CompressionFormat specifies the compression format for document body.
+
+const (
+	// GZIP uses gzip compression (widely supported, good compression ratio).
+	GZIP CompressionFormat = "gzip"
+	// ZSTD uses Zstandard compression (better compression and speed than gzip).
+	ZSTD CompressionFormat = "zstd"
+	// DEFLATE uses DEFLATE compression (older format, similar to gzip).
+	DEFLATE CompressionFormat = "deflate"
+)
+    Available compression formats for document body compression.
+
+type ConcurrentScrapeResult struct {
+	// Result is the successful scrape, or nil when Error is set.
+	Result *ScrapeResult
+	// Error is the failure, or nil when Result is set.
+	Error error
+}
+    ConcurrentScrapeResult is one entry in the channel returned by
+    ConcurrentScrape. Exactly one of Result and Error is non-nil per emission.
+
+    This was previously an anonymous struct with embedded fields, which
+    prevented callers outside package scrapfly from accessing the error (Go's
+    universe-scope `error` type produces an unexported promoted field in
+    anonymous structs). Named exported fields make the result usable from any
+    caller.
+
+type ConfigData struct {
+	URL                string   `json:"url"`
+	Method             string   `json:"method"`
+	Country            *string  `json:"country"`
+	RenderJS           bool     `json:"render_js"`
+	Cache              bool     `json:"cache"`
+	CacheClear         bool     `json:"cache_clear"`
+	CacheTTL           int      `json:"cache_ttl"`
+	SSL                bool     `json:"ssl"`
+	DNS                bool     `json:"dns"`
+	ASP                bool     `json:"asp"`
+	Debug              bool     `json:"debug"`
+	ProxyPool          string   `json:"proxy_pool"`
+	Session            *string  `json:"session"`
+	SessionStickyProxy bool     `json:"session_sticky_proxy"`
+	Tags               []string `json:"tags"`
+	CorrelationID      *string  `json:"correlation_id"`
+	// Retry echoes back the retry=true/false flag the caller sent. The server
+	// may normalize this to a nested object in a future release; for now it's
+	// a plain bool. Nullable because older API versions omit the field.
+	Retry *bool `json:"retry,omitempty"`
+	// BrowserBrand echoes back the browser_brand value the caller sent when
+	// render_js=true. Nullable because the field is only populated when the
+	// request actually exercised the browser path.
+	BrowserBrand *string `json:"browser_brand,omitempty"`
+	Body         *string `json:"body"`
+	// Headers echoes back the request headers the server actually sent. The
+	// API serializes each header value as an array (e.g. `{"accept": ["*/*"]}`)
+	// to preserve HTTP's multi-value semantics, matching Go's stdlib
+	// http.Header shape. Request-side headers live on ScrapeConfig.Headers
+	// (plain map[string]string), which the client serializes into the
+	// `headers[key]=value` query-string form.
+	Headers         map[string][]string `json:"headers"`
+	JS              *string             `json:"js"`
+	RenderingWait   int                 `json:"rendering_wait"`
+	WaitForSelector *string             `json:"wait_for_selector"`
+	Screenshots     map[string]string   `json:"screenshots"`
+	ScreenshotFlags []string            `json:"screenshot_flags"`
+	WebhookName     *string             `json:"webhook_name"`
+	Timeout         int                 `json:"timeout"`
+	JSScenario      interface{}         `json:"js_scenario"`
+	Extract         interface{}         `json:"extract"`
+	Lang            []string            `json:"lang"`
+	OS              *string             `json:"os"`
+	AutoScroll      bool                `json:"auto_scroll"`
+	CostBudget      *int                `json:"cost_budget"`
+	RenderingStage  string              `json:"rendering_stage"`
+	Env             string              `json:"env"`
+	Origin          string              `json:"origin"`
+	Project         string              `json:"project"`
+	UserUUID        string              `json:"user_uuid"`
+	UUID            string              `json:"uuid"`
+}
+    ConfigData contains the configuration that was used for a scrape request.
+    This mirrors the 'config' object in the API response.
+
+type ContextData struct {
+	ASP               interface{}  `json:"asp"`
+	BandwidthConsumed int          `json:"bandwidth_consumed"`
+	Cache             CacheContext `json:"cache"`
+	Cookies           []Cookie     `json:"cookies"`
+	Cost              CostContext  `json:"cost"`
+	CreatedAt         string       `json:"created_at"`
+	Debug             DebugContext `json:"debug"`
+	Env               string       `json:"env"`
+	// Fingerprint       string            `json:"fingerprint"`
+	Fingerprint      interface{}       `json:"fingerprint"`
+	Headers          map[string]string `json:"headers"`
+	IsXMLHTTPRequest bool              `json:"is_xml_http_request"`
+	Job              interface{}       `json:"job"`
+	Lang             interface{}       `json:"lang"` // []string or string
+	OS               OSContext         `json:"os"`
+	Project          string            `json:"project"`
+	Proxy            ProxyContext      `json:"proxy"`
+	Redirects        interface{}       `json:"redirects"` // []string or string
+	Retry            int               `json:"retry"`
+	Schedule         interface{}       `json:"schedule"`
+	Session          interface{}       `json:"session"`
+	Spider           interface{}       `json:"spider"`
+	Throttler        interface{}       `json:"throttler"`
+	URI              URIContext        `json:"uri"`
+	URL              string            `json:"url"`
+	Webhook          interface{}       `json:"webhook"`
+}
+    ContextData contains metadata about the scrape request execution. This
+    includes proxy information, costs, cache status, and more.
+
+type Cookie struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Expires  string `json:"expires"`
+	Path     string `json:"path"`
+	Comment  string `json:"comment"`
+	Domain   string `json:"domain"`
+	MaxAge   int    `json:"max_age"`
+	Secure   bool   `json:"secure"`
+	HTTPOnly bool   `json:"http_only"`
+	Version  string `json:"version"`
+	Size     int    `json:"size"`
+}
+    Cookie represents an HTTP cookie.
+
+type CostContext struct {
+	Details []CostDetail `json:"details"`
+	Total   int          `json:"total"`
+}
+    CostContext contains the cost breakdown for a scrape request.
+
+type CostDetail struct {
+	Amount      int    `json:"amount"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
+}
+    CostDetail represents a single cost item for a scrape request.
+
+type Crawl struct {
+	// Has unexported fields.
+}
+    Crawl is the high-level fluent wrapper around a single crawler job
+    lifecycle.
+
+    It tracks the UUID returned by Start() and caches the most recent status and
+    downloaded artifacts. Callers can use it as:
+
+        crawl := scrapfly.NewCrawl(client, &scrapfly.CrawlerConfig{
+            URL:       "https://web-scraping.dev/products",
+            PageLimit: 10,
+        })
+        if err := crawl.Start(); err != nil { log.Fatal(err) }
+        if err := crawl.Wait(nil); err != nil { log.Fatal(err) }
+
+        status, _ := crawl.Status(true)
+        fmt.Println("visited", status.State.URLsVisited)
+
+        md, _ := crawl.Read("https://web-scraping.dev/products", scrapfly.CrawlerFormatMarkdown)
+        fmt.Println(md[:200])
+
+    Use the lower-level client methods (Client.StartCrawl, Client.CrawlStatus,
+    etc.) directly if you need finer control, concurrency, or want to avoid the
+    caching behavior.
+
+func NewCrawl(client *Client, config *CrawlerConfig) *Crawl
+    NewCrawl constructs a Crawl wrapper. It does NOT schedule the job — call
+    Start() to actually submit the crawler config to the API.
+
+func (c *Crawl) Cancel() error
+    Cancel cancels this crawl. Returns nil on success. Calling Cancel on a
+    crawler that has already finished is a server-side no-op (still returns
+    nil).
+
+    Mirrors Python SDK's `Crawl.cancel()`.
+
+func (c *Crawl) Contents(format CrawlerContentFormat, opts *CrawlContentsOptions) (*CrawlerContents, error)
+    Contents returns the bulk JSON envelope for crawled pages.
+
+func (c *Crawl) HAR() (*CrawlerArtifact, error)
+    HAR downloads the HAR artifact for this crawl (cached after first call).
+
+func (c *Crawl) Read(targetURL string, format CrawlerContentFormat) (*CrawlContent, error)
+    Read fetches the content for a single crawled URL.
+
+    Returns a CrawlContent wrapper for parity with the Python SDK's
+    `Crawl.read()`. The wrapper carries the raw content string plus the
+    originating URL and crawler UUID. Status code / headers / duration are not
+    populated by the plain-mode endpoint (those would require fetching the full
+    WARC artifact).
+
+    Returns nil if the URL was not part of this crawl (server returns 404).
+
+func (c *Crawl) ReadBatch(urls []string, formats []CrawlerContentFormat) (map[string]map[string]string, error)
+    ReadBatch retrieves content for up to 100 URLs in one round-trip.
+
+func (c *Crawl) ReadString(targetURL string, format CrawlerContentFormat) (string, error)
+    ReadString is a convenience wrapper for callers that just want the raw
+    content string without the CrawlContent envelope. Returns an empty string
+    (and nil error) when the URL isn't part of this crawl.
+
+func (c *Crawl) Start() error
+    Start schedules the crawl on the Scrapfly API. Calling it twice returns
+    ErrCrawlerAlreadyStarted.
+
+func (c *Crawl) Started() bool
+    Started reports whether Start() has been called successfully.
+
+func (c *Crawl) Status(refresh bool) (*CrawlerStatus, error)
+    Status fetches the current status of the crawler job.
+
+    When refresh=true, always hits the API. When refresh=false, returns the most
+    recently cached status (or hits the API on first call). Most callers want
+    refresh=true inside polling loops; set refresh=false when you just need to
+    re-read the last known state cheaply.
+
+func (c *Crawl) URLs(opts *CrawlURLsOptions) (*CrawlerURLs, error)
+    URLs lists crawled URLs for this crawl. Thin wrapper around
+    Client.CrawlURLs.
+
+func (c *Crawl) UUID() string
+    UUID returns the crawler job UUID. Empty before Start() is called.
+
+func (c *Crawl) WARC() (*CrawlerArtifact, error)
+    WARC downloads the WARC artifact for this crawl (cached after first call).
+
+func (c *Crawl) Wait(opts *WaitOptions) error
+    Wait polls Status until the crawler reaches a terminal state.
+
+    Returns nil when the crawler reaches DONE with IsSuccess=true. Returns an
+    error wrapping ErrCrawlerFailed / ErrCrawlerCancelled / ErrCrawlerTimeout
+    for the other terminal conditions.
+
+    Pass nil for default behavior (5-second polling, no timeout).
+
+type CrawlContent struct {
+	// URL is the crawled URL.
+	URL string
+
+	// Content is the page content in the requested format.
+	Content string
+
+	// StatusCode is the HTTP response status code from the original scrape.
+	// Zero when the SDK couldn't determine the status (e.g. plain mode
+	// fetches don't carry the status, only the content).
+	StatusCode int
+
+	// Headers contains the HTTP response headers from the original scrape.
+	// Empty in plain-mode fetches; populated when the content comes from a
+	// richer source (e.g. WARC artifact, JSON contents envelope).
+	Headers map[string]string
+
+	// Duration is the original scrape duration in seconds, or zero if unknown.
+	Duration float64
+
+	// LogID is the Scrapfly scrape log ID for debugging, or empty if unknown.
+	LogID string
+
+	// Country is the country the request was made from, or empty if unknown.
+	Country string
+
+	// CrawlUUID is the parent crawler job UUID.
+	CrawlUUID string
+}
+    CrawlContent is the response object for a single crawled URL fetched via
+    `Crawl.Read(url, format)` or the lower-level `Client.CrawlContentsPlain`.
+
+    Mirrors the Python SDK's `CrawlContent` class. Provides typed accessors for
+    the content, status code, headers, and metadata of a single page.
+
+func (c *CrawlContent) Error() bool
+    Error reports whether the original scrape was a 4xx/5xx response.
+
+func (c *CrawlContent) Len() int
+    Len returns the length of the content string.
+
+func (c *CrawlContent) LogURL() string
+    LogURL returns the dashboard URL for this scrape's log, or empty if LogID is
+    unset.
+
+func (c *CrawlContent) String() string
+    String returns the raw content. Lets fmt.Println pretty-print it.
+
+func (c *CrawlContent) Success() bool
+    Success reports whether the original scrape was a 2xx response.
+
+type CrawlContentsOptions struct {
+	// Format selects the content format. Required.
+	Format CrawlerContentFormat
+	// URL targets a single crawled URL. Required when Plain=true.
+	URL string
+	// Plain=true returns the raw content for a single URL (requires URL) as
+	// a string with Content-Type matching the format. Default false returns
+	// the JSON envelope wrapped in CrawlerContents.
+	Plain bool
+	// Limit caps the number of URLs in bulk JSON mode (max 50, default 10).
+	Limit int
+	// Offset skips N URLs in bulk JSON mode.
+	Offset int
+}
+    CrawlContentsOptions configures a GET /crawl/{uuid}/contents request.
+
+type CrawlURLsOptions struct {
+	// Status filters by URL status. Empty = server default ("visited").
+	// Valid values: "visited", "pending", "failed", "skipped".
+	Status string
+	// Page is the 1-based page number. Zero = 1.
+	Page int
+	// PerPage is the page size. Zero = 100.
+	PerPage int
+}
+    CrawlURLsOptions configures a GET /crawl/{uuid}/urls request.
+
+type CrawlerArtifact struct {
+	Type CrawlerArtifactType
+	Data []byte
+}
+    CrawlerArtifact holds the raw bytes of a downloaded WARC or HAR artifact.
+
+    The SDK does NOT bundle WARC/HAR parsers — use a dedicated Go library (e.g.
+    nlnwa/gowarc) if you need to walk the records. The Save() method is provided
+    for the common case of writing the artifact to disk.
+
+func (a *CrawlerArtifact) Len() int
+    Len returns the size of the artifact data in bytes.
+
+func (a *CrawlerArtifact) Save(path string) error
+    Save writes the artifact bytes to a file at the given path.
+
+type CrawlerArtifactType string
+    CrawlerArtifactType identifies the wire format of a crawler artifact.
+
+const (
+	ArtifactTypeWARC CrawlerArtifactType = "warc"
+	ArtifactTypeHAR  CrawlerArtifactType = "har"
+)
+    Artifact type values accepted by GET /crawl/{uuid}/artifact?type=...
+
+type CrawlerConfig struct {
+	// URL is the starting URL for the crawl (required). Must be HTTP/HTTPS.
+	URL string `required:"true"`
+
+	// Crawl limits. Zero means "unset" — the server applies its own default.
+	PageLimit    int
+	MaxDepth     int
+	MaxDuration  int // seconds, 15-10800
+	MaxAPICredit int // 0 means no limit per the docs
+
+	// Path filtering (mutually exclusive — validated at serialization time).
+	ExcludePaths     []string `exclusive:"path_filter"`
+	IncludeOnlyPaths []string `exclusive:"path_filter"`
+
+	// Domain & subdomain restrictions.
+	IgnoreBasePathRestriction bool
+	FollowExternalLinks       bool
+	AllowedExternalDomains    []string
+
+	// Tri-state. nil = unset (server default True); non-nil = explicit override.
+	FollowInternalSubdomains  *bool
+	AllowedInternalSubdomains []string
+
+	// Request configuration.
+	Headers        map[string]string
+	Delay          int // ms, 0-15000
+	UserAgent      string
+	MaxConcurrency int
+	RenderingDelay int // ms, 0-25000
+
+	// Crawl strategy.
+	UseSitemaps    bool
+	IgnoreNoFollow bool
+
+	// Tri-state. nil = unset (server default True); non-nil = explicit override.
+	RespectRobotsTxt *bool
+
+	// Cache.
+	Cache      bool
+	CacheTTL   int // seconds, 0-604800
+	CacheClear bool
+
+	// Content extraction.
+	ContentFormats  []CrawlerContentFormat `validate:"enum"`
+	ExtractionRules map[string]interface{}
+
+	// Web scraping features.
+	ASP       bool
+	ProxyPool string
+	Country   string
+
+	// Webhook integration.
+	WebhookName   string
+	WebhookEvents []CrawlerWebhookEvent `validate:"enum"`
+}
+    CrawlerConfig configures a Scrapfly Crawler API job.
+
+    Every field except URL is optional. Fields left at their zero value are
+    NOT sent to the API so the server applies its own documented defaults (e.g.
+    respect_robots_txt defaults to true).
+
+    Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains) use *bool so
+    the SDK can distinguish "unset" from "explicit false". Setting a bool field
+    directly (e.g. UseSitemaps=true) is sent as-is; only the tri-state fields
+    need pointer semantics.
+
+type CrawlerContentFormat string
+    CrawlerContentFormat represents the content format to extract from crawled
+    pages.
+
+    Corresponds to the `content_formats` array on POST /crawl. The server-side
+    contract permits any subset of these formats per crawler config.
+
+const (
+	CrawlerFormatHTML          CrawlerContentFormat = "html"
+	CrawlerFormatCleanHTML     CrawlerContentFormat = "clean_html"
+	CrawlerFormatMarkdown      CrawlerContentFormat = "markdown"
+	CrawlerFormatText          CrawlerContentFormat = "text"
+	CrawlerFormatJSON          CrawlerContentFormat = "json"
+	CrawlerFormatExtractedData CrawlerContentFormat = "extracted_data"
+	CrawlerFormatPageMetadata  CrawlerContentFormat = "page_metadata"
+)
+    Content formats supported by the Crawler API.
+
+func (f CrawlerContentFormat) IsValid() bool
+    IsValid returns true when the format is one of the documented values.
+    Used by the SDK's reflective enum validator.
+
+func (f CrawlerContentFormat) String() string
+    String returns the wire-format value.
+
+type CrawlerContents struct {
+	Contents map[string]map[string]string `json:"contents"`
+	Links    CrawlerContentsLinks         `json:"links"`
+}
+    CrawlerContents wraps the JSON response of GET /crawl/{uuid}/contents (bulk
+    mode, plain=false). The Contents map is URL → format → content.
+
+    For the single-URL `plain=true` mode, the client returns a raw string
+    directly instead of this struct.
+
+type CrawlerContentsLinks struct {
+	CrawledURLs string `json:"crawled_urls,omitempty"`
+	Next        string `json:"next,omitempty"`
+	Prev        string `json:"prev,omitempty"`
+}
+    CrawlerContentsLinks is the pagination links block returned with bulk
+    contents.
+
+type CrawlerLifecycleWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		SeedURL string `json:"seed_url"`
+		Links   struct {
+			Status string `json:"status"`
+		} `json:"links"`
+	} `json:"payload"`
+}
+    CrawlerLifecycleWebhook covers the four "lifecycle" events that
+    share an identical payload shape: crawler_started, crawler_stopped,
+    crawler_cancelled, crawler_finished. Verified against the example JSONs in
+    the docs.
+
+type CrawlerStartResponse struct {
+	CrawlerUUID string `json:"crawler_uuid"`
+	Status      string `json:"status"`
+}
+    CrawlerStartResponse is the response from POST /crawl.
+
+type CrawlerState struct {
+	URLsVisited   int `json:"urls_visited"`
+	URLsExtracted int `json:"urls_extracted"`
+	URLsFailed    int `json:"urls_failed"`
+	URLsSkipped   int `json:"urls_skipped"`
+	URLsToCrawl   int `json:"urls_to_crawl"`
+	APICreditUsed int `json:"api_credit_used"`
+	Duration      int `json:"duration"`
+
+	// StartTime is the Unix timestamp when the first worker picked up the job.
+	// nil while the crawler is still PENDING.
+	StartTime *int64 `json:"start_time"`
+
+	// StopTime is the Unix timestamp when the crawler reached a terminal state.
+	// nil until the crawler is finished or cancelled.
+	StopTime *int64 `json:"stop_time"`
+
+	// StopReason is one of the documented stop-reason strings. nil while still running.
+	StopReason *string `json:"stop_reason"`
+}
+    CrawlerState holds the per-job metrics returned inside CrawlerStatus.
+
+    Note on nullable fields: while the crawler is in PENDING (before any worker
+    has picked up the job), StartTime, StopTime, and StopReason are all null on
+    the wire and zero here (with HasStarted()/HasStopped() for disambiguation).
+    They become populated once the crawl progresses.
+
+func (s *CrawlerState) HasStarted() bool
+    HasStarted reports whether the crawler has been picked up by a worker (i.e.
+    StartTime is set).
+
+func (s *CrawlerState) HasStopped() bool
+    HasStopped reports whether the crawler reached a terminal state (i.e.
+    StopTime is set).
+
+type CrawlerStatus struct {
+	CrawlerUUID string `json:"crawler_uuid"`
+	Status      string `json:"status"`
+	IsFinished  bool   `json:"is_finished"`
+	// IsSuccess is nil while the crawler is still running, then bool once terminal.
+	// The server occasionally sends `false` during PENDING, so callers should use
+	// IsComplete() / IsFailed() rather than checking the field directly.
+	IsSuccess *bool        `json:"is_success"`
+	State     CrawlerState `json:"state"`
+}
+    CrawlerStatus wraps the JSON response of GET /crawl/{uuid}/status.
+
+    Strict parsing: required fields (CrawlerUUID, Status, IsFinished, State
+    and its documented counters) are validated after JSON unmarshal. A missing
+    or zero required field throws an error so API contract drift surfaces loud
+    rather than silently producing a zero-valued Status object.
+
+func (s *CrawlerStatus) IsCancelled() bool
+    IsCancelled reports whether the crawler was cancelled by the user.
+
+func (s *CrawlerStatus) IsComplete() bool
+    IsComplete reports whether the crawler finished successfully.
+
+func (s *CrawlerStatus) IsFailed() bool
+    IsFailed reports whether the crawler reached DONE but failed.
+
+func (s *CrawlerStatus) IsRunning() bool
+    IsRunning reports whether the crawler is still PENDING or RUNNING.
+
+func (s *CrawlerStatus) ProgressPct() float64
+    ProgressPct returns a rough progress estimate based on visited vs extracted
+    URLs (0-100). Returns 0 when nothing has been extracted yet.
+
+type CrawlerURLDiscoveredWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		Origin         string   `json:"origin"`
+		DiscoveredURLs []string `json:"discovered_urls"`
+	} `json:"payload"`
+}
+    CrawlerURLDiscoveredWebhook is the payload for the crawler_url_discovered
+    event.
+
+type CrawlerURLEntry struct {
+	URL    string
+	Status string // Echoed from the request filter (visited/pending/failed/skipped)
+	Reason string // Only set for failed/skipped URLs; empty otherwise
+}
+    CrawlerURLEntry is a single URL record from GET /crawl/{uuid}/urls.
+
+    The endpoint streams one record per line as `text/plain`. For `visited`/
+    `pending` URLs each line is just the URL; for `failed`/`skipped` URLs
+    the line is `url,reason`. Streaming text is intentional — the endpoint is
+    expected to scale to millions of records per job where JSON would be too
+    expensive both on the server and the client.
+
+type CrawlerURLFailedWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		URL          string                 `json:"url"`
+		Error        string                 `json:"error"`
+		ScrapeConfig map[string]interface{} `json:"scrape_config"`
+		Links        struct {
+			Log *string `json:"log"`
+		} `json:"links"`
+	} `json:"payload"`
+}
+    CrawlerURLFailedWebhook is the payload for the crawler_url_failed event.
+
+type CrawlerURLSkippedWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		// URLs maps skipped URLs to their skip reason.
+		URLs map[string]string `json:"urls"`
+	} `json:"payload"`
+}
+    CrawlerURLSkippedWebhook is the payload for the crawler_url_skipped event.
+
+type CrawlerURLVisitedWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		URL    string `json:"url"`
+		Scrape struct {
+			StatusCode int               `json:"status_code"`
+			Country    string            `json:"country,omitempty"`
+			LogUUID    string            `json:"log_uuid,omitempty"`
+			LogURL     string            `json:"log_url,omitempty"`
+			Content    map[string]string `json:"content"`
+		} `json:"scrape"`
+	} `json:"payload"`
+}
+    CrawlerURLVisitedWebhook is the payload for the crawler_url_visited event.
+
+type CrawlerURLs struct {
+	URLs    []CrawlerURLEntry
+	Page    int
+	PerPage int
+}
+    CrawlerURLs wraps the streaming-text response of GET /crawl/{uuid}/urls.
+
+    Page and PerPage are echoes of the caller's request parameters — the wire
+    protocol carries no global total count. Use len(URLs) for the page size and
+    request further pages by incrementing Page until an empty response.
+
+type CrawlerWebhookCommon struct {
+	CrawlerUUID string       `json:"crawler_uuid"`
+	Project     string       `json:"project"`
+	Env         string       `json:"env"`
+	Action      string       `json:"action"`
+	State       CrawlerState `json:"state"`
+}
+    CrawlerWebhookCommon holds the fields shared by every crawler webhook event.
+
+type CrawlerWebhookEvent string
+    CrawlerWebhookEvent enumerates the webhook events the crawler can emit.
+
+    Source of truth:
+    apps/scrapfly/scrape-engine/scrape_engine/crawler/webhook_manager.py
+    (verified against the public docs and the example payloads shipped in
+    apps/scrapfly/web-app/src/Template/Docs/crawler-api/webhooks_example/).
+
+const (
+	WebhookCrawlerStarted       CrawlerWebhookEvent = "crawler_started"
+	WebhookCrawlerURLVisited    CrawlerWebhookEvent = "crawler_url_visited"
+	WebhookCrawlerURLSkipped    CrawlerWebhookEvent = "crawler_url_skipped"
+	WebhookCrawlerURLDiscovered CrawlerWebhookEvent = "crawler_url_discovered"
+	WebhookCrawlerURLFailed     CrawlerWebhookEvent = "crawler_url_failed"
+	WebhookCrawlerStopped       CrawlerWebhookEvent = "crawler_stopped"
+	WebhookCrawlerCancelled     CrawlerWebhookEvent = "crawler_cancelled"
+	WebhookCrawlerFinished      CrawlerWebhookEvent = "crawler_finished"
+)
+    Crawler webhook event names.
+
+func DetectCrawlerWebhookEvent(body []byte) (CrawlerWebhookEvent, error)
+    DetectCrawlerWebhookEvent peeks into a webhook request body and returns
+    the event name without parsing the rest of the payload. Callers can then
+    unmarshal into the appropriate typed webhook struct.
+
+    Example:
+
+        event, err := scrapfly.DetectCrawlerWebhookEvent(body)
+        if err != nil { return err }
+        switch event {
+        case scrapfly.WebhookCrawlerFinished:
+            var wh scrapfly.CrawlerLifecycleWebhook
+            json.Unmarshal(body, &wh)
+            // ...
+        case scrapfly.WebhookCrawlerURLVisited:
+            var wh scrapfly.CrawlerURLVisitedWebhook
+            json.Unmarshal(body, &wh)
+            // ...
+        }
+
+func (e CrawlerWebhookEvent) IsValid() bool
+    IsValid returns true when the event is one of the documented values.
+
+func (e CrawlerWebhookEvent) String() string
+    String returns the wire-format value.
+
+type CreateScheduleRequest struct {
+	WebhookName      string              `json:"webhook_name"`
+	Recurrence       *ScheduleRecurrence `json:"recurrence,omitempty"`
+	ScheduledDate    string              `json:"scheduled_date,omitempty"`
+	AllowConcurrency bool                `json:"allow_concurrency"`
+	RetryOnFailure   bool                `json:"retry_on_failure"`
+	MaxRetries       int                 `json:"max_retries,omitempty"`
+	Notes            string              `json:"notes,omitempty"`
+}
+
+type DebugContext struct {
+	ResponseURL   string      `json:"response_url"`
+	ScreenshotURL interface{} `json:"screenshot_url"`
+}
+    DebugContext contains URLs for debugging the request.
+
+type Enumerable[T fmt.Stringer] interface {
+	Enum() []T
+	AnyEnum() []any
+}
+
+type ExtractionConfig struct {
+	// Body is the document content to extract data from (required).
+	Body []byte `required:"true"`
+	// ContentType specifies the document content type, e.g., "text/html" (required).
+	ContentType string `required:"true"`
+	// URL is the original URL of the document (optional, helps with context).
+	URL string
+	// Charset specifies the character encoding of the document.
+	Charset string
+	// ExtractionTemplate is the name of a saved extraction template.
+	ExtractionTemplate string `exclusive:"extraction"`
+	// ExtractionEphemeralTemplate is an inline extraction template definition.
+	ExtractionEphemeralTemplate map[string]interface{} `exclusive:"extraction"`
+	// ExtractionPrompt is an AI prompt describing what data to extract.
+	ExtractionPrompt string `exclusive:"extraction"`
+	// ExtractionModel specifies which AI model to use for extraction.
+	ExtractionModel ExtractionModel `exclusive:"extraction" validate:"enum"`
+	// IsDocumentCompressed indicates if the Body is compressed.
+	IsDocumentCompressed bool
+	// DocumentCompressionFormat specifies the compression format if IsDocumentCompressed is true.
+	DocumentCompressionFormat CompressionFormat
+	// Webhook is the name of a webhook to call after extraction completes.
+	Webhook string
+	// Timeout is the maximum time in seconds for extraction processing.
+	Timeout int
+}
+    ExtractionConfig configures an AI-powered data extraction request to the
+    Scrapfly API.
+
+    This struct contains all available options for extracting structured data
+    from HTML or other document formats using AI models or predefined templates.
+
+    Example with template:
+
+        config := &scrapfly.ExtractionConfig{
+            Body:               []byte("<html>...</html>"),
+            ContentType:        "text/html",
+            ExtractionTemplate: "product",
+        }
+
+    Example with AI prompt:
+
+        config := &scrapfly.ExtractionConfig{
+            Body:             []byte("<html>...</html>"),
+            ContentType:      "text/html",
+            ExtractionPrompt: "Extract product name, price, and description",
+        }
+
+type ExtractionModel string
+    ExtractionModel defines the type of extraction model to use for extraction.
+    see https://scrapfly.io/docs/extraction-api/automatic-ai#models
+
+const (
+	ExtractionModelArticle                   ExtractionModel = "article"
+	ExtractionModelEvent                     ExtractionModel = "event"
+	ExtractionModelFoodRecipe                ExtractionModel = "food_recipe"
+	ExtractionModelHotel                     ExtractionModel = "hotel"
+	ExtractionModelHotelListing              ExtractionModel = "hotel_listing"
+	ExtractionModelJobListing                ExtractionModel = "job_listing"
+	ExtractionModelJobPosting                ExtractionModel = "job_posting"
+	ExtractionModelOrganization              ExtractionModel = "organization"
+	ExtractionModelProduct                   ExtractionModel = "product"
+	ExtractionModelProductListing            ExtractionModel = "product_listing"
+	ExtractionModelRealEstateProperty        ExtractionModel = "real_estate_property"
+	ExtractionModelRealEstatePropertyListing ExtractionModel = "real_estate_property_listing"
+	ExtractionModelReviewList                ExtractionModel = "review_list"
+	ExtractionModelSearchEngineResults       ExtractionModel = "search_engine_results"
+	ExtractionModelSocialMediaPost           ExtractionModel = "social_media_post"
+	ExtractionModelSoftware                  ExtractionModel = "software"
+	ExtractionModelStock                     ExtractionModel = "stock"
+	ExtractionModelVehicleAd                 ExtractionModel = "vehicle_ad"
+	ExtractionModelVehicleAdListing          ExtractionModel = "vehicle_ad_listing"
+	ExtractionModelNone                      ExtractionModel = ""
+)
+func (f ExtractionModel) AnyEnum() []any
+
+func (f ExtractionModel) Enum() []ExtractionModel
+
+func (f ExtractionModel) IsValid() bool
+
+func (f ExtractionModel) String() string
+
+type ExtractionResult struct {
+	// Data contains the extracted structured data.
+	Data interface{} `json:"data"`
+	// ContentType is the content type of the extracted data.
+	ContentType string `json:"content_type"`
+	// DataQuality indicates the quality/confidence of the extraction (if available).
+	DataQuality interface{} `json:"data_quality,omitempty"`
+}
+    ExtractionResult represents the result of a data extraction request.
+
+type Format string
+    Format defines the format for the scraped content response.
+
+const (
+	// FormatJSON returns content structured as JSON.
+	FormatJSON Format = "json"
+	// FormatText returns plain text content with HTML tags stripped.
+	FormatText Format = "text"
+	// FormatMarkdown converts HTML to Markdown format.
+	FormatMarkdown Format = "markdown"
+	// FormatCleanHTML returns cleaned and normalized HTML.
+	FormatCleanHTML Format = "clean_html"
+	// FormatRaw returns the raw HTML content without any processing.
+	FormatRaw Format = "raw"
+)
+    Available content formats for scrape responses.
+
+func (f Format) AnyEnum() []any
+
+func (f Format) Enum() []Format
+
+func (f Format) IsValid() bool
+
+func (f Format) String() string
+
+type FormatOption string
+    FormatOption defines additional options for content formatting.
+
+const (
+	// NoLinks removes all links from the formatted content.
+	NoLinks FormatOption = "no_links"
+	// NoImages removes all images from the formatted content.
+	NoImages FormatOption = "no_images"
+	// OnlyContent extracts only the main content, removing headers, footers, and navigation.
+	OnlyContent FormatOption = "only_content"
+)
+    Available format options that can be combined with Format settings.
+
+func (f FormatOption) AnyEnum() []any
+
+func (f FormatOption) Enum() []FormatOption
+
+func (f FormatOption) IsValid() bool
+
+func (f FormatOption) String() string
+
+type HarArchive struct {
+	// Has unexported fields.
+}
+    HarArchive wraps a parsed HAR file with high-level accessors.
+
+    Supports both the standard HAR format (single JSON object with
+    `log.entries`) and Scrapfly's streaming HAR format (concatenated JSON
+    objects: a leading `log` object followed by individual entry objects).
+
+    Example:
+
+        artifact, _ := client.CrawlArtifact(uuid, scrapfly.ArtifactTypeHAR)
+        archive, err := scrapfly.ParseHAR(artifact.Data)
+        if err != nil { log.Fatal(err) }
+
+        for _, entry := range archive.Entries() {
+            fmt.Printf("%s %s [%d]\n", entry.Method(), entry.URL(), entry.StatusCode())
+        }
+
+func ParseHAR(data []byte) (*HarArchive, error)
+    ParseHAR decodes a HAR byte stream into a HarArchive. Auto-detects gzip-
+    compressed input by checking the magic bytes.
+
+func (a *HarArchive) Creator() map[string]interface{}
+    Creator returns the creator info block (`{name, version, comment}`).
+
+func (a *HarArchive) Entries() []*HarEntry
+    Entries returns every entry in the archive as a list of HarEntry wrappers.
+
+func (a *HarArchive) FilterByContentType(contentType string) []*HarEntry
+    FilterByContentType returns every entry whose Content-Type contains the
+    given substring (case-sensitive). Useful for collecting all HTML responses,
+    JavaScript files, images, etc.
+
+func (a *HarArchive) FilterByStatus(statusCode int) []*HarEntry
+    FilterByStatus returns every entry whose response has the given HTTP status
+    code.
+
+func (a *HarArchive) FindByURL(url string) *HarEntry
+    FindByURL returns the first entry whose request URL exactly matches `url`,
+    or nil if no entry matches.
+
+func (a *HarArchive) IterEntries(fn func(*HarEntry) bool)
+    IterEntries calls fn for each entry; iteration stops when fn returns false.
+
+func (a *HarArchive) Len() int
+    Len returns the number of entries in the archive.
+
+func (a *HarArchive) Pages() []map[string]interface{}
+    Pages returns the HAR pages list (each page is a free-form map).
+
+func (a *HarArchive) URLs() []string
+    URLs returns every distinct URL in the archive in entry order.
+
+func (a *HarArchive) Version() string
+    Version returns the HAR file format version (e.g. "1.2").
+
+type HarEntry struct {
+	// Has unexported fields.
+}
+    HarEntry wraps a single HAR entry (one HTTP request/response pair).
+
+    Mirrors the Python SDK's HarEntry class. The accessors live behind getter
+    methods (rather than exporting raw maps) so the SDK can normalise the
+    `headers: [{name, value}, ...]` array form into a Go-friendly map.
+
+func NewHarEntry(data map[string]interface{}) *HarEntry
+    NewHarEntry constructs a HarEntry from a decoded HAR entry map. Mostly used
+    internally by HarArchive.GetEntries; exported for tests and for callers that
+    already have a parsed HAR map.
+
+func (e *HarEntry) Content() []byte
+    Content returns the raw response body bytes.
+
+    HAR stores response bodies as text inside `content.text`. When the
+    body is binary or non-UTF-8, the producer base64-encodes it and sets
+    `content.encoding = "base64"`. We honour both forms.
+
+func (e *HarEntry) ContentSize() int
+    ContentSize returns the response body size in bytes
+    (`response.content.size`).
+
+func (e *HarEntry) ContentType() string
+    ContentType returns the response Content-Type (from
+    `response.content.mimeType`).
+
+func (e *HarEntry) Method() string
+    Method returns the HTTP method (GET, POST, ...).
+
+func (e *HarEntry) RequestHeaders() map[string]string
+    RequestHeaders returns the request headers as a flat map.
+
+    HAR stores headers as `[{name, value}, ...]` to preserve duplicates and
+    order; we collapse duplicates by keeping the last occurrence. Use the raw
+    data via NewHarEntry's input if you need the full ordered list.
+
+func (e *HarEntry) ResponseHeaders() map[string]string
+    ResponseHeaders returns the response headers as a flat map.
+
+func (e *HarEntry) StartedDateTime() string
+    StartedDateTime returns the ISO 8601 timestamp when the request started.
+
+func (e *HarEntry) StatusCode() int
+    StatusCode returns the HTTP response status code, or 0 if missing.
+
+func (e *HarEntry) StatusText() string
+    StatusText returns the HTTP response status text (e.g. "OK", "Not Found").
+
+func (e *HarEntry) String() string
+    String makes HarEntry play nicely with fmt.Println.
+
+func (e *HarEntry) Time() float64
+    Time returns the total elapsed time for the request in milliseconds.
+
+func (e *HarEntry) Timings() map[string]float64
+    Timings returns the detailed timing breakdown (DNS, blocked, connect, etc.).
+
+func (e *HarEntry) URL() string
+    URL returns the request URL for this entry.
+
+type HttpMethod string
+
+const (
+	HttpMethodGet     HttpMethod = http.MethodGet
+	HttpMethodPost    HttpMethod = http.MethodPost
+	HttpMethodPut     HttpMethod = http.MethodPut
+	HttpMethodPatch   HttpMethod = http.MethodPatch
+	HttpMethodOptions HttpMethod = http.MethodOptions
+	HttpMethodHead    HttpMethod = http.MethodHead
+)
+func (f HttpMethod) AnyEnum() []any
+
+func (f HttpMethod) Enum() []HttpMethod
+
+func (f HttpMethod) IsValid() bool
+
+func (f HttpMethod) String() string
+
+type IFrame struct {
+	URL     string     `json:"url"`
+	URI     URIContext `json:"uri"`
+	Content string     `json:"content"`
+}
+    IFrame represents an iframe found in the page.
+
+type ListSchedulesOptions struct {
+	Status string // "ACTIVE" | "PAUSED" | "CANCELLED"
+	Kind   string // "api.scrape" | "api.screenshot" | "api.crawler" (cross-kind list only)
+}
+
+type LogLevel int
+    LogLevel defines the severity level for log messages.
+
+const (
+	// LevelDebug logs all messages including detailed debug information.
+	LevelDebug LogLevel = iota
+	// LevelInfo logs informational messages and above.
+	LevelInfo
+	// LevelWarn logs warnings and errors.
+	LevelWarn
+	// LevelError logs only error messages.
+	LevelError
+)
+    Available log levels, from most to least verbose.
+
+type Logger struct {
+	// Has unexported fields.
+}
+    Logger provides simple leveled logging for the Scrapfly SDK.
+
+func NewLogger(name string) *Logger
+    NewLogger creates a new Logger instance with the given name prefix.
+
+    Example:
+
+        logger := scrapfly.NewLogger("my-scraper")
+        logger.SetLevel(scrapfly.LevelDebug)
+        logger.Info("Starting scraper...")
+
+func (l *Logger) Debug(v ...interface{})
+    Debug logs a debug-level message. These messages are only logged when the
+    level is set to LevelDebug.
+
+func (l *Logger) Error(v ...interface{})
+    Error logs an error message. These messages are always logged regardless of
+    the level setting.
+
+func (l *Logger) Info(v ...interface{})
+    Info logs an informational message. These messages are logged when the level
+    is LevelInfo or lower.
+
+func (l *Logger) SetLevel(level LogLevel)
+    SetLevel sets the minimum logging level. Only messages at this level or
+    higher will be logged.
+
+func (l *Logger) Warn(v ...interface{})
+    Warn logs a warning message. These messages are logged when the level is
+    LevelWarn or lower.
+
+type MonitoringAggregation string
+    MonitoringAggregation selects which aggregation level(s) to return for
+    /scrape/monitoring/metrics. Multiple values can be combined.
+
+const (
+	MonitoringAggregationAccount MonitoringAggregation = "account"
+	MonitoringAggregationProject MonitoringAggregation = "project"
+	MonitoringAggregationTarget  MonitoringAggregation = "target"
+)
+type MonitoringDataFormat string
+    MonitoringDataFormat controls the response format of the Monitoring API.
+    "structured" returns JSON aggregates (default); "prometheus" returns a
+    Prometheus-compatible text exposition.
+
+const (
+	MonitoringDataFormatStructured MonitoringDataFormat = "structured"
+	MonitoringDataFormatPrometheus MonitoringDataFormat = "prometheus"
+)
+type MonitoringMetricsOptions struct {
+	Format      MonitoringDataFormat
+	Period      MonitoringPeriod
+	Aggregation []MonitoringAggregation
+	// IncludeWebhook folds events with origin=WEBHOOK (callbacks
+	// executed by the webhook worker) into this product's totals.
+	// Defaults to false to match the dashboard's default view.
+	IncludeWebhook bool
+}
+    MonitoringMetricsOptions configures a Get*MonitoringMetrics call. All fields
+    are optional — an empty struct returns account aggregates for the last 24
+    hours in structured JSON.
+
+type MonitoringPeriod string
+    MonitoringPeriod is a pre-defined time window for monitoring queries.
+    Mutually exclusive with explicit start/end.
+
+const (
+	MonitoringPeriodLast5m       MonitoringPeriod = "last5m"
+	MonitoringPeriodLast1h       MonitoringPeriod = "last1h"
+	MonitoringPeriodLast24h      MonitoringPeriod = "last24h"
+	MonitoringPeriodLast7d       MonitoringPeriod = "last7d"
+	MonitoringPeriodSubscription MonitoringPeriod = "subscription"
+)
+type MonitoringTargetMetricsOptions struct {
+	Domain         string
+	GroupSubdomain bool
+	Period         MonitoringPeriod
+	Start          time.Time
+	End            time.Time
+	IncludeWebhook bool
+}
+    MonitoringTargetMetricsOptions configures a Get*MonitoringTargetMetrics
+    call. Domain is required. Start/End are mutually exclusive with Period;
+    both must be set together.
+
+type OSContext struct {
+	Distribution string `json:"distribution"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Version      string `json:"version"`
+}
+    OSContext contains information about the operating system used for the
+    request.
+
+type Project struct {
+	AllowExtraUsage    bool     `json:"allow_extra_usage"`
+	AllowedNetworks    []string `json:"allowed_networks"`
+	BudgetLimit        *float32 `json:"budget_limit"`
+	BudgetSpent        *float32 `json:"budget_spent"`
+	ConcurrencyLimit   *int     `json:"concurrency_limit"`
+	Name               string   `json:"name"`
+	QuotaReached       bool     `json:"quota_reached"`
+	ScrapeRequestCount int      `json:"scrape_request_count"`
+	ScrapeRequestLimit *int     `json:"scrape_request_limit"`
+	Tags               []string `json:"tags"`
+}
+
+type ProxyContext struct {
+	Country  string `json:"country"`
+	Identity string `json:"identity"`
+	Network  string `json:"network"`
+	Pool     string `json:"pool"`
+}
+    ProxyContext contains information about the proxy used for the request.
+
+type ProxyPool string
+    ProxyPool represents the type of proxy pool to use for scraping.
+
+const (
+	// PublicDataCenterPool uses datacenter proxies. Fast and reliable but easier to detect.
+	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
+	// PublicResidentialPool uses residential proxies. More expensive but harder to detect.
+	PublicResidentialPool ProxyPool = "public_residential_pool"
+)
+    Available proxy pool types for Scrapfly API requests.
+
+func (f ProxyPool) AnyEnum() []any
+
+func (f ProxyPool) Enum() []ProxyPool
+
+func (f ProxyPool) IsValid() bool
+
+func (f ProxyPool) String() string
+
+type ResultData struct {
+	BrowserData     BrowserData            `json:"browser_data"`
+	Content         string                 `json:"content"`
+	ContentEncoding string                 `json:"content_encoding"`
+	ContentType     string                 `json:"content_type"`
+	Cookies         []Cookie               `json:"cookies"`
+	Data            interface{}            `json:"data"`
+	DNS             interface{}            `json:"dns"`
+	Duration        float64                `json:"duration"`
+	Error           *APIErrorDetails       `json:"error"`
+	Format          string                 `json:"format"`
+	IFrames         []IFrame               `json:"iframes"`
+	LogURL          string                 `json:"log_url"`
+	Reason          string                 `json:"reason"`
+	RequestHeaders  map[string]string      `json:"request_headers"`
+	ResponseHeaders map[string]interface{} `json:"response_headers"` // Can be string or []string
+	Screenshots     map[string]Screenshot  `json:"screenshots"`
+	Size            int                    `json:"size"`
+	SSL             interface{}            `json:"ssl"`
+	Status          string                 `json:"status"`
+	StatusCode      int                    `json:"status_code"`
+	Success         bool                   `json:"success"`
+	URL             string                 `json:"url"`
+	ExtractedData   *ExtractionResult      `json:"extracted_data"`
+}
+    ResultData contains the scraped content and response information. This is
+    the main data from the scrape request including HTML content, status codes,
+    headers, cookies, and more.
+
+type Schedule struct {
+	ID                  string                 `json:"id"`
+	Kind                string                 `json:"kind"`
+	Status              string                 `json:"status"`
+	NextScheduledDate   *string                `json:"next_scheduled_date,omitempty"`
+	ScheduledDate       *string                `json:"scheduled_date,omitempty"`
+	Recurrence          *ScheduleRecurrence    `json:"recurrence,omitempty"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	Notes               *string                `json:"notes,omitempty"`
+	CreatedBy           *string                `json:"created_by,omitempty"`
+	CreatedAt           string                 `json:"created_at"`
+	UpdatedAt           string                 `json:"updated_at"`
+	CancelledAt         *string                `json:"cancelled_at,omitempty"`
+	AllowConcurrency    bool                   `json:"allow_concurrency"`
+	RetryOnFailure      bool                   `json:"retry_on_failure"`
+	MaxRetries          int                    `json:"max_retries"`
+	WebhookUUID         *string                `json:"webhook_uuid,omitempty"`
+	UserUUID            *string                `json:"user_uuid,omitempty"`
+	ConsecutiveFailures int                    `json:"consecutive_failures,omitempty"`
+}
+
+type ScheduleEnd struct {
+	Type  string  `json:"type"` // "date" | "count"
+	Date  *string `json:"date,omitempty"`
+	Count *int    `json:"count,omitempty"`
+}
+
+type ScheduleRecurrence struct {
+	Cron     string       `json:"cron,omitempty"`
+	Interval int          `json:"interval,omitempty"`
+	Unit     string       `json:"unit,omitempty"`
+	Days     []string     `json:"days,omitempty"`
+	Ends     *ScheduleEnd `json:"ends,omitempty"`
+}
+
+type ScheduleUsage struct {
+	Current int `json:"current"`
+	Limit   int `json:"limit"`
+}
+
+type ScrapeConfig struct {
+	// URL is the target URL to scrape (required).
+	URL string `required:"true"`
+	// Method is the HTTP method to use (GET, POST, PUT, PATCH). Defaults to GET.
+	Method HttpMethod
+	// Body is the raw request body for POST/PUT/PATCH requests.
+	Body string
+	// Data is a map that will be encoded as request body based on Content-Type.
+	// Cannot be used together with Body.
+	Data map[string]interface{}
+	// Headers are custom HTTP headers to send with the request.
+	Headers map[string]string
+	// Cookies are cookies to include in the request.
+	Cookies map[string]string
+	// Country specifies the proxy country code (e.g., "us", "uk", "de").
+	// Supports ISO 3166-1 alpha-2 country codes.
+	Country string
+	// ProxyPool specifies which proxy pool to use.
+	ProxyPool ProxyPool
+	// RenderJS enables JavaScript rendering using a headless browser.
+	RenderJS bool
+	// ASP enables Anti-Scraping Protection bypass.
+	ASP bool
+	// Cache enables response caching.
+	Cache bool
+	// CacheTTL sets the cache time-to-live in seconds.
+	CacheTTL int
+	// CacheClear forces cache refresh for this request.
+	CacheClear bool
+	// Timeout sets the maximum time in milliseconds to wait for the request.
+	Timeout int
+	// Retry enables automatic retries on failure (enabled by default).
+	Retry bool
+	// Session maintains a persistent browser session across requests.
+	Session string
+	// SessionStickyProxy keeps the same proxy for all requests in a session.
+	SessionStickyProxy bool
+	// Tags are custom tags for organizing and filtering requests.
+	Tags []string
+	// Webhook is the name of a webhook to call after the request completes.
+	Webhook string
+	// Debug enables debug mode for viewing request details in the dashboard.
+	Debug bool
+	// SSL enables SSL certificate verification details capture.
+	SSL bool
+	// DNS enables DNS resolution details capture.
+	DNS bool
+	// CorrelationID is a custom ID for tracking requests across systems.
+	CorrelationID string
+	// Format specifies the output format for the scraped content.
+	Format Format `validate:"enum"`
+	// FormatOptions are additional options for the content format.
+	FormatOptions []FormatOption `validate:"enum"`
+	// ExtractionTemplate is the name of a saved extraction template.
+	// it is exclusve with other extraction options
+	ExtractionTemplate string `exclusive:"extraction"`
+	// ExtractionEphemeralTemplate is an inline extraction template definition.
+	// it is exclusve with other extraction options
+	ExtractionEphemeralTemplate map[string]interface{} `exclusive:"extraction"`
+	// ExtractionPrompt is an AI prompt for extracting structured data.
+	// it is exclusve with other extraction options
+	ExtractionPrompt string `exclusive:"extraction"`
+	// ExtractionModel specifies which AI model to use for extraction.
+	// it is exclusve with other extraction options
+	ExtractionModel ExtractionModel `exclusive:"extraction" validate:"enum"`
+	// WaitForSelector waits for a CSS selector to appear before capturing (requires RenderJS).
+	WaitForSelector string
+	// RenderingWait is additional wait time in milliseconds after page load (requires RenderJS).
+	RenderingWait int
+	// AutoScroll automatically scrolls the page to load lazy content (requires RenderJS).
+	AutoScroll bool
+	// Screenshots is a map of screenshot names to CSS selectors (requires RenderJS).
+	Screenshots map[string]string
+	// ScreenshotFlags are options for screenshot capture.
+	ScreenshotFlags []ScreenshotFlag `validate:"enum"`
+	// JS is custom JavaScript code to execute in the browser (requires RenderJS).
+	JS string
+	// JSScenario is a sequence of browser actions to perform (requires RenderJS).
+	JSScenario []js_scenario.JSScenarioStep
+	// OS spoofs the operating system in the User-Agent.
+	OS string
+	// Lang sets the Accept-Language header values.
+	Lang []string
+	// BrowserBrand selects the Chromium-based browser for fingerprint generation.
+	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
+	// Invalid values are silently dropped by the server.
+	BrowserBrand string
+	// CostBudget limits the maximum API credit cost for ASP retries.
+	// ASP dynamically upgrades proxy/browser to bypass protection; this caps spending.
+	CostBudget int
+	// Geolocation spoofs the browser's geolocation. Format: "latitude,longitude".
+	Geolocation string
+	// RenderingStage controls when the browser considers the page loaded (requires RenderJS).
+	// Valid values: "complete" (default), "domcontentloaded".
+	RenderingStage string
+	// ProxifiedResponse returns the raw upstream response (target's status,
+	// headers, body) instead of the JSON envelope. When true, callers must
+	// use ScrapeProxified() instead of Scrape(), which returns *http.Response.
+	ProxifiedResponse bool
+}
+    ScrapeConfig configures a web scraping request to the Scrapfly API.
+
+    This struct contains all available options for customizing scraping
+    behavior, including proxy settings, JavaScript rendering, data extraction,
+    and more.
+
+    Example:
+
+        config := &scrapfly.ScrapeConfig{
+            URL:      "https://example.com",
+            RenderJS: true,
+            Country:  "us",
+            ASP:      true,
+            Cache:    true,
+            Format:   scrapfly.FormatMarkdown,
+        }
+
+type ScrapeResult struct {
+	// Config contains the configuration used for this scrape request.
+	Config ConfigData `json:"config"`
+	// Context contains metadata about the request execution.
+	Context ContextData `json:"context"`
+	// Result contains the scraped content and response data.
+	Result ResultData `json:"result"`
+	// UUID is the unique identifier for this scrape request.
+	UUID string `json:"uuid"`
+
+	// Has unexported fields.
+}
+    ScrapeResult represents the complete response from a scrape request.
+
+    It contains the scraped content, metadata, configuration, and context
+    information about the request. The result includes details about the
+    upstream response, proxy used, cost, and more.
+
+func (r *ScrapeResult) SaveAttachments(savePath ...string) ([]string, error)
+    SaveAttachments is a shortcut to save all attachments to disk
+
+    Parameters:
+      - savePath: Optional directory path where to save the files (defaults to
+        current directory) (if savePath does not exists, it will be created in a
+        best effort basis)
+
+    Returns the full paths to the saved files.
+
+    Example:
+
+        paths, err := r.SaveAttachments("./attachments")
+        if err != nil {
+            log.Fatal(err)
+        }
+        for _, path := range paths {
+        	fmt.Printf("Attachment saved to: %s\n", path)
+        }
+
+func (r *ScrapeResult) SaveScreenshots(savePath ...string) ([]string, error)
+    SaveScreenshots is a shortcut to save all screenshots to disk
+
+    Parameters:
+      - savePath: Optional directory path where to save the files (defaults to
+        current directory) (if savePath does not exists, it will be created in a
+        best effort basis)
+
+    Returns the full paths to the saved files.
+
+    Example:
+
+        paths, err := r.SaveScreenshots("./screenshots")
+        if err != nil {
+            log.Fatal(err)
+        }
+        for _, path := range paths {
+        	fmt.Printf("Screenshot saved to: %s\n", path)
+        }
+
+func (r *ScrapeResult) Selector() (*goquery.Document, error)
+    Selector provides a goquery document for parsing HTML content.
+
+    The selector is lazy-loaded and cached using sync.Once, making it safe for
+    concurrent use. It can only be used with HTML content.
+
+    Example:
+
+        result, err := client.Scrape(config)
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        doc, err := result.Selector()
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        title := doc.Find("title").First().Text()
+        fmt.Println(title)
+
+type ScrapeUsage struct {
+	ConcurrentLimit     int `json:"concurrent_limit"`
+	ConcurrentRemaining int `json:"concurrent_remaining"`
+	ConcurrentUsage     int `json:"concurrent_usage"`
+	Current             int `json:"current"`
+	Extra               int `json:"extra"`
+	Limit               int `json:"limit"`
+	Remaining           int `json:"remaining"`
+}
+
+type Screenshot struct {
+	// CSSSelector is the CSS selector of the element to capture. If Format == fullpage, this will be nil
+	CSSSelector *string `json:"css_selector"`
+	// Extension is the file extension (jpg, png, webp, gif)
+	Extension string `json:"extension"` // Always jpg when request from scraping api.
+	// Format is the format of the screenshot (fullpage, element)
+	Format string `json:"format"`
+	// Size is the size of the screenshot in bytes
+	Size int `json:"size"`
+	// URL is the URL to retrieve the screenshot from
+	URL string `json:"url"`
+
+	// Name is the name of the screenshot retrieved from the API response
+	Name string `json:"-"`
+
+	// Has unexported fields.
+}
+    Screenshot represents a screenshot captured during rendering.
+
+func (s *Screenshot) Image() ([]byte, error)
+    Image returns the screenshot data as a byte slice.
+
+func (s *Screenshot) Save(savePath ...string) (string, error)
+    Save saves a scraped screenshot result to disk.
+
+    Parameters:
+      - savePath: Optional directory path where to save the file (defaults to
+        current directory) (if savePath does not exists, it will be created in a
+        best effort basis)
+
+    it is named as the name of the screenshot as set in config and retrieved
+    from the API response Returns the full path to the saved file.
+
+    Example:
+
+        filePath, err := s.Save("./screenshots")
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Printf("Screenshot saved to: %s\n", filePath)
+
+type ScreenshotConfig struct {
+	// URL is the target URL to capture (required).
+	URL string
+	// Format specifies the image format (jpg, png, webp, gif).
+	Format ScreenshotFormat
+	// Capture defines what to capture: "fullpage" for entire page, or a CSS selector for specific element.
+	Capture string
+	// Resolution sets the viewport size (e.g., "1920x1080").
+	Resolution string
+	// Country specifies the proxy country code (e.g., "us", "uk", "de").
+	Country string
+	// Timeout sets the maximum time in milliseconds to wait for the request.
+	Timeout int
+	// RenderingWait is additional wait time in milliseconds after page load.
+	RenderingWait int
+	// WaitForSelector waits for a CSS selector to appear before capturing.
+	WaitForSelector string
+	// Options are additional screenshot options (dark mode, block banners, etc.).
+	Options []ScreenshotOption
+	// AutoScroll automatically scrolls the page to load lazy content.
+	AutoScroll bool
+	// JS is custom JavaScript code to execute before capturing.
+	JS string
+	// Cache enables response caching.
+	Cache bool
+	// CacheTTL sets the cache time-to-live in seconds.
+	CacheTTL int
+	// CacheClear forces cache refresh for this request.
+	CacheClear bool
+	// Webhook is the name of a webhook to call after the request completes.
+	Webhook string
+	// VisionDeficiencyType specifies the type of vision deficiency to simulate.
+	// see https://scrapfly.io/docs/screenshot-api/accessibility#vision_deficiency
+	VisionDeficiencyType VisionDeficiencyType
+}
+    ScreenshotConfig configures a screenshot capture request to the Scrapfly
+    API.
+
+    This struct contains all available options for customizing screenshot
+    behavior, including format, resolution, capture area, and rendering options.
+
+    Example:
+
+        config := &scrapfly.ScreenshotConfig{
+            URL:        "https://example.com",
+            Format:     scrapfly.FormatPNG,
+            Capture:    "fullpage",
+            Resolution: "1920x1080",
+            Options:    []scrapfly.ScreenshotOption{scrapfly.OptionBlockBanners},
+        }
+
+type ScreenshotFlag string
+    ScreenshotFlag defines options for screenshot behavior when using
+    Screenshots parameter.
+
+const (
+	// LoadImages enables image loading for screenshots (disabled by default for performance).
+	LoadImages ScreenshotFlag = "load_images"
+	// DarkMode enables dark mode rendering.
+	DarkMode ScreenshotFlag = "dark_mode"
+	// BlockBanners blocks cookie banners and similar overlays.
+	BlockBanners ScreenshotFlag = "block_banners"
+	// PrintMediaFormat uses print media CSS for rendering.
+	PrintMediaFormat ScreenshotFlag = "print_media_format"
+	// HighQuality captures screenshots at higher quality settings.
+	HighQuality ScreenshotFlag = "high_quality"
+)
+    Available screenshot flags for customizing screenshot capture.
+
+func (f ScreenshotFlag) AnyEnum() []any
+
+func (f ScreenshotFlag) Enum() []ScreenshotFlag
+
+func (f ScreenshotFlag) IsValid() bool
+
+func (f ScreenshotFlag) String() string
+
+type ScreenshotFormat string
+    ScreenshotFormat defines the image format for screenshots.
+
+const (
+	// FormatJPG captures screenshots in JPEG format (smaller file size, lossy compression).
+	FormatJPG ScreenshotFormat = "jpg"
+	// FormatPNG captures screenshots in PNG format (larger file size, lossless compression).
+	FormatPNG ScreenshotFormat = "png"
+	// FormatWEBP captures screenshots in WebP format (modern format with good compression).
+	FormatWEBP ScreenshotFormat = "webp"
+	// FormatGIF captures screenshots in GIF format (animated screenshots support).
+	FormatGIF ScreenshotFormat = "gif"
+)
+    Available image formats for screenshot capture.
+
+type ScreenshotMetadata struct {
+	// ExtensionName is the file extension (jpg, png, webp, gif).
+	ExtensionName string
+	// UpstreamStatusCode is the HTTP status code from the target website.
+	UpstreamStatusCode int
+	// UpstreamURL is the final URL after any redirects.
+	UpstreamURL string
+}
+    ScreenshotMetadata contains metadata about a captured screenshot.
+
+type ScreenshotOption string
+    ScreenshotOption defines options to customize screenshot capture behavior.
+
+const (
+	// OptionLoadImages enables image loading (disabled by default for performance).
+	OptionLoadImages ScreenshotOption = "load_images"
+	// OptionDarkMode enables dark mode rendering.
+	OptionDarkMode ScreenshotOption = "dark_mode"
+	// OptionBlockBanners blocks cookie banners and similar overlays.
+	OptionBlockBanners ScreenshotOption = "block_banners"
+	// OptionPrintMediaFormat uses print media CSS for rendering.
+	OptionPrintMediaFormat ScreenshotOption = "print_media_format"
+)
+    Available options for customizing screenshot capture.
+
+type ScreenshotResult struct {
+	// Image contains the raw screenshot image bytes.
+	Image []byte
+	// Metadata contains information about the screenshot.
+	Metadata ScreenshotMetadata
+}
+    ScreenshotResult represents a screenshot captured by the API.
+
+func (s *ScreenshotResult) Save(name string, savePath ...string) (string, error)
+    Save saves a screenshot result to disk.
+
+    Parameters:
+      - name: The base name for the file (without extension)
+      - savePath: Optional directory path where to save the file (defaults to
+        current directory)
+
+    Returns the full path to the saved file.
+
+    Example:
+
+        filePath, err := s.Save("example", "./screenshots")
+        if err != nil {
+            log.Fatal(err)
+        }
+        fmt.Printf("Screenshot saved to: %s\n", filePath)
+
+type SpiderUsage struct {
+	Current int `json:"current"`
+	Limit   int `json:"limit"`
+}
+
+type Subscription struct {
+	Billing            SubscriptionBilling `json:"billing"`
+	ExtraScrapeAllowed bool                `json:"extra_scrape_allowed"`
+	MaxConcurrency     int                 `json:"max_concurrency"`
+	Period             SubscriptionPeriod  `json:"period"`
+	PlanName           string              `json:"plan_name"`
+	Usage              SubscriptionUsage   `json:"usage"`
+}
+
+type SubscriptionBilling struct {
+	CurrentExtraScrapeRequestPrice SubscriptionIntegerPrice `json:"current_extra_scrape_request_price"`
+	ExtraScrapeRequestPricePer10k  SubscriptionFloatPrice   `json:"extra_scrape_request_price_per_10k"`
+	OngoingPayment                 SubscriptionFloatPrice   `json:"ongoing_payment"`
+	PlanPrice                      SubscriptionIntegerPrice `json:"plan_price"`
+}
+
+type SubscriptionFloatPrice struct {
+	Currency string  `json:"currency"`
+	Amount   float32 `json:"amount"`
+}
+
+type SubscriptionIntegerPrice struct {
+	Currency string `json:"currency"`
+	Amount   int    `json:"amount"`
+}
+
+type SubscriptionPeriod struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type SubscriptionUsage struct {
+	Spider   SpiderUsage   `json:"spider"`
+	Schedule ScheduleUsage `json:"schedule"`
+	Scrape   ScrapeUsage   `json:"scrape"`
+}
+
+type URIContext struct {
+	BaseURL    string      `json:"base_url"`
+	Fragment   interface{} `json:"fragment"`
+	Host       string      `json:"host"`
+	Params     interface{} `json:"params"`
+	Port       int         `json:"port"`
+	Query      interface{} `json:"query"`
+	RootDomain string      `json:"root_domain"`
+	Scheme     string      `json:"scheme"`
+}
+    URIContext contains parsed URI information about the requested URL.
+
+type UnblockConfig struct {
+	URL            string `json:"url"`
+	Country        string `json:"country,omitempty"`
+	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
+	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
+	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
+	SolveCaptcha   bool   `json:"solve_captcha,omitempty"`   // Arm the captcha solver on the post-unblock session
+}
+    UnblockConfig configures an unblock request.
+
+type UnblockResult struct {
+	WSURL       string `json:"ws_url"`
+	SessionID   string `json:"session_id"`
+	RunID       string `json:"run_id"`
+	MCPEndpoint string `json:"mcp_endpoint,omitempty"` // MCP streamable-HTTP endpoint (only when EnableMCP=true)
+}
+    UnblockResult is the response from the /unblock endpoint.
+
+type UpdateScheduleRequest struct {
+	Recurrence       *ScheduleRecurrence    `json:"recurrence,omitempty"`
+	ScheduledDate    *string                `json:"scheduled_date,omitempty"`
+	AllowConcurrency *bool                  `json:"allow_concurrency,omitempty"`
+	RetryOnFailure   *bool                  `json:"retry_on_failure,omitempty"`
+	MaxRetries       *int                   `json:"max_retries,omitempty"`
+	Notes            *string                `json:"notes,omitempty"`
+	ScrapeConfig     map[string]interface{} `json:"scrape_config,omitempty"`
+	ScreenshotConfig map[string]interface{} `json:"screenshot_config,omitempty"`
+	CrawlerConfig    map[string]interface{} `json:"crawler_config,omitempty"`
+}
+
+type VerifyAPIKeyResult struct {
+	// Valid indicates whether the API key is valid.
+	Valid bool `json:"valid"`
+}
+    VerifyAPIKeyResult represents the result of an API key verification.
+
+type VisionDeficiencyType string
+
+const (
+	VisionDeficiencyTypeNone            VisionDeficiencyType = "none"
+	VisionDeficiencyTypeDeuteranopia    VisionDeficiencyType = "deuteranopia"
+	VisionDeficiencyTypeProtanopia      VisionDeficiencyType = "protanopia"
+	VisionDeficiencyTypeTritanopia      VisionDeficiencyType = "tritanopia"
+	VisionDeficiencyTypeAchromatopsia   VisionDeficiencyType = "achromatopsia"
+	VisionDeficiencyTypeBlurredVision   VisionDeficiencyType = "blurredVision"
+	VisionDeficiencyTypeReducedContrast VisionDeficiencyType = "reducedContrast"
+)
+func (f VisionDeficiencyType) AnyEnum() []any
+
+func (f VisionDeficiencyType) Enum() []VisionDeficiencyType
+
+func (f VisionDeficiencyType) IsValid() bool
+
+func (f VisionDeficiencyType) String() string
+
+type WaitOptions struct {
+	// PollInterval controls how often to hit the status endpoint.
+	// Defaults to 5 seconds when zero.
+	PollInterval time.Duration
+	// MaxWait is the total wall-clock deadline for the wait loop.
+	// Zero means "no timeout" — wait indefinitely.
+	MaxWait time.Duration
+	// Verbose enables per-poll progress logging via the default SDK logger.
+	Verbose bool
+	// AllowCancelled, when true, makes Wait return nil instead of
+	// ErrCrawlerCancelled when the crawler reaches the CANCELLED terminal
+	// state. Useful for the cancel-then-wait pattern where the caller
+	// already triggered the cancellation themselves. Defaults to false,
+	// preserving the prior return-error behavior for callers that observe
+	// external interrupts.
+	AllowCancelled bool
+}
+    WaitOptions configures the polling behavior of Crawl.Wait.
+
+type WarcPage struct {
+	URL        string
+	StatusCode int
+	Headers    map[string]string
+	Content    []byte
+}
+    WarcPage is a simplified view of a single crawled page extracted from a WARC
+    artifact. Use it when you don't need the raw record / WARC headers.
+
+type WarcParser struct {
+	// Has unexported fields.
+}
+    WarcParser walks a WARC byte stream record-by-record.
+
+    The parser handles both gzip-compressed and uncompressed WARC data and
+    supports the subset of the WARC 1.0 format that the Scrapfly Crawler
+    produces in its artifacts. It is intentionally minimal — for general-purpose
+    WARC consumption, prefer a dedicated library like github.com/nlnwa/gowarc.
+
+    Example:
+
+        artifact, _ := client.CrawlArtifact(uuid, scrapfly.ArtifactTypeWARC)
+        parser, err := scrapfly.ParseWARC(artifact.Data)
+        if err != nil { log.Fatal(err) }
+
+        pages, _ := parser.GetPages()
+        for _, page := range pages {
+            fmt.Printf("%s: %d bytes\n", page.URL, len(page.Content))
+        }
+
+func ParseWARC(data []byte) (*WarcParser, error)
+    ParseWARC creates a WarcParser from raw WARC bytes.
+
+    Auto-detects gzip-compressed input by checking the magic bytes (1f 8b).
+    Returns a non-nil error only when the gzip header is present but the payload
+    fails to decompress.
+
+func (p *WarcParser) GetPages() ([]WarcPage, error)
+    GetPages returns every HTTP response in the WARC as a slim WarcPage.
+
+    This is the easiest way to walk a crawler's artifact without dealing with
+    the WARC format directly. For very large artifacts, use IterResponses
+    instead so you can stream records one at a time.
+
+func (p *WarcParser) IterRecords(fn func(*WarcRecord) bool) (int, error)
+    IterRecords walks every record in the WARC stream and invokes fn for each
+    successfully parsed record. Iteration stops when fn returns false (treat the
+    bool as "continue", not "ok").
+
+    Returns the number of records yielded and any error encountered while
+    reading the underlying byte stream.
+
+func (p *WarcParser) IterResponses(fn func(*WarcRecord) bool) (int, error)
+    IterResponses is a convenience helper that yields only HTTP response records
+    (record_type=response) with a non-zero status code.
+
+type WarcRecord struct {
+	// RecordType is the value of the WARC-Type header (e.g. "response", "request",
+	// "metadata", "warcinfo").
+	RecordType string
+
+	// URL is the value of the WARC-Target-URI header.
+	URL string
+
+	// Headers contains the parsed HTTP response headers (only populated for
+	// "response" records). Header names are kept in their original casing.
+	Headers map[string]string
+
+	// Content is the raw record body. For "response" records, this is the HTTP
+	// response body (after the headers section); for other types, this is the
+	// raw content block as it appeared in the WARC.
+	Content []byte
+
+	// StatusCode is the parsed HTTP status code for "response" records.
+	// Zero for non-response records or when the status line couldn't be parsed.
+	StatusCode int
+
+	// WARCHeaders contains all the WARC-level headers (WARC-Type, WARC-Date, etc.).
+	WARCHeaders map[string]string
+}
+    WarcRecord represents a single WARC record parsed from a crawl artifact.
+
+    Mirrors the dataclass exposed by the Python SDK's `WarcRecord`.
+
+
+=== github.com/scrapfly/go-scrapfly/examples ===
+
+
+=== github.com/scrapfly/go-scrapfly/examples/batch ===
+Scrape multiple URLs in a single request using the Batch Scraping API.
+
+ScrapeBatch accepts up to 100 ScrapeConfigs and streams each result through
+the returned channel as soon as it's ready. Results arrive OUT OF ORDER — use
+CorrelationID on every config to match each result back to its originating
+request.
+
+=== github.com/scrapfly/go-scrapfly/examples/batch/msgpack ===
+Use msgpack wire encoding for per-part bodies in a batch.
+
+Msgpack produces slightly smaller payloads than JSON and decodes faster.
+Pass BatchOptions{Format: BatchFormatMsgpack} via ScrapeBatchWithOptions to opt
+in — the SDK handles decoding transparently.
+
+=== github.com/scrapfly/go-scrapfly/examples/batch/proxified ===
+Mix proxified and JSON-envelope scrapes in a single batch.
+
+A config with ProxifiedResponse=true returns the raw upstream response (HTML,
+JSON, binary, etc.) instead of Scrapfly's JSON envelope. In a batch,
+proxified parts surface as an *http.Response on BatchResult.ProxifiedResponse;
+normal parts surface as *ScrapeResult on BatchResult.Result.
+
+=== github.com/scrapfly/go-scrapfly/examples/cloud_browser ===
+
+
+=== github.com/scrapfly/go-scrapfly/scenario ===
+package js_scenario // import "github.com/scrapfly/go-scrapfly/scenario"
+
+Package scenario provides a fluent builder for creating Scrapfly API JS
+Scenarios.
+
+It abstracts away the complexity of building the raw JSON structure
+(`[]map[string]interface{}`), providing a type-safe and user-friendly interface.
+The final output is a base64 encoded string, ready to be used as the
+`js_scenario` API parameter.
+
+# Example Usage
+
+    import "your/project/path/scenario"
+
+    func main() {
+    	// Create a new scenario builder and chain actions.
+    	sc, err := scenario.New().
+    		// Fill in login credentials
+    		Fill("input[name=username]", "user123").
+    		Fill("input[name=password]", "password", scenario.WithFillClear(true)).
+
+    		// Click the login button
+    		Click("button[type='submit']").
+
+    		// Wait for the page to navigate after login
+    		WaitForNavigation(scenario.WithNavTimeout(5000)).
+
+    		// Wait for a specific element to appear on the new page
+    		WaitForSelector("#dashboard", scenario.WithSelectorTimeout(10000)).
+
+    		// Execute a script to get the user agent
+    		Execute("return navigator.userAgent").
+
+    		// Finalize the builder to get the base64 encoded string.
+    		Build()
+
+    	if err != nil {
+    		// Handle error
+    		log.Fatalf("Failed to build scenario: %v", err)
+    	}
+
+    	// Now `sc` can be passed directly to the Scrapfly API client.
+    	scrapeConfig := &scrapfly.ScrapeConfig{
+    		URL: "https://example.com",
+    		RenderJS: true,
+    		Country: "us",
+    		ASP: true,
+    		ProxyPool: scrapfly.PublicResidentialPool,
+    		JSScenario: sc,
+    	}
+    }
+
+VARIABLES
+
+var JsScenarioSchema *jsonschema.Schema
+    JsScenarioSchema is the schema for the JS Scenario. Use it with more capable
+    models or where compatibility with recent meta-schemas is required.
+
+var JsScenarioSchemaFlattened *jsonschema.Schema
+    JsScenarioSchemaFlattened is the flattened schema for the JS Scenario. Use
+    it with more "humble" models or where compatibility with recent meta-schemas
+    if not available.
+
+
+TYPES
+
+type ClickOption func(*clickParams)
+    ClickOption is a function that configures a click action.
+
+func WithClickIgnoreIfNotVisible(ignore bool) ClickOption
+    WithClickIgnoreIfNotVisible sets the 'ignore_if_not_visible' option for a
+    click. If true, the step will be skipped if the element is not visible.
+
+func WithClickMultiple(multiple bool) ClickOption
+    WithClickMultiple sets the 'multiple' option for a click. If true, it will
+    click on all elements matching the selector.
+
+type ConditionAction string
+    ConditionAction defines the behavior when a condition is met.
+
+const (
+	// ActionContinue continues the scenario if the condition is met.
+	ActionContinue ConditionAction = "continue"
+	// ActionExitSuccess stops the scenario and marks it as successful if the condition is met.
+	ActionExitSuccess ConditionAction = "exit_success"
+	// ActionExitFailed stops the scenario and marks it as failed if the condition is met.
+	ActionExitFailed ConditionAction = "exit_failed"
+)
+type ExecuteOption func(*executeParams)
+    ExecuteOption is a function that configures an execute action.
+
+func WithExecuteTimeout(milliseconds int) ExecuteOption
+    WithExecuteTimeout sets the timeout for a script execution.
+
+type FillOption func(*fillParams)
+    FillOption is a function that configures a fill action.
+
+func WithFillClear(clear bool) FillOption
+    WithFillClear sets the 'clear' option for a fill action. If true, the input
+    field will be cleared before typing the value.
+
+type JSScenarioStep = map[string]any
+    JSScenarioStep represents a single step in the JS scenario.
+
+type ScenarioBuilder struct {
+	// Has unexported fields.
+}
+    ScenarioBuilder manages the construction of a JS scenario.
+
+func New() *ScenarioBuilder
+    New creates a new, empty instance of the ScenarioBuilder.
+
+func (b *ScenarioBuilder) Build() ([]JSScenarioStep, error)
+    Build finalizes the scenario, ensure it has no errors and returns the steps.
+    If any errors occurred during the building process, they will be returned
+    here. If the scenario is empty, it returns nil and no error.
+
+func (b *ScenarioBuilder) Click(selector string, opts ...ClickOption) *ScenarioBuilder
+    Click adds a step to click on an element matching the given CSS or XPath
+    selector.
+
+func (b *ScenarioBuilder) ConditionOnSelector(selector string, state SelectorState, action ConditionAction) *ScenarioBuilder
+    ConditionOnSelector adds a condition step based on the presence or absence
+    of an element.
+
+func (b *ScenarioBuilder) ConditionOnStatusCode(statusCode int, action ConditionAction) *ScenarioBuilder
+    ConditionOnStatusCode adds a condition step that checks the HTTP status code
+    of the response.
+
+func (b *ScenarioBuilder) Execute(script string, opts ...ExecuteOption) *ScenarioBuilder
+    Execute adds a step to run a custom JavaScript snippet in the browser
+    context.
+
+func (b *ScenarioBuilder) Fill(selector, value string, opts ...FillOption) *ScenarioBuilder
+    Fill adds a step to type a text value into an element matching the selector.
+
+func (b *ScenarioBuilder) Scroll(opts ...ScrollOption) *ScenarioBuilder
+    Scroll adds a step to scroll the page or a specific element. By default
+    (with no options), it scrolls to the bottom of the page.
+
+func (b *ScenarioBuilder) Steps() []JSScenarioStep
+    Steps returns the steps of the scenario. Use this method when passing the
+    scenario to the ScrapeConfig.JSScenario field.
+
+func (b *ScenarioBuilder) Wait(milliseconds int) *ScenarioBuilder
+    Wait adds a step to pause the scenario for a specified duration.
+
+func (b *ScenarioBuilder) WaitForNavigation(opts ...WaitForNavOption) *ScenarioBuilder
+    WaitForNavigation adds a step that waits for a page navigation to complete.
+    This is useful after actions that trigger a page load, like clicking a link
+    or submitting a form.
+
+func (b *ScenarioBuilder) WaitForSelector(selector string, opts ...WaitForSelectorOption) *ScenarioBuilder
+    WaitForSelector adds a step that waits for an element to appear, disappear,
+    or reach a specific state.
+
+type ScrollOption func(*scrollParams)
+    ScrollOption is a function that configures a scroll action.
+
+func WithScrollClickAfter(selector string) ScrollOption
+    WithScrollClickAfter performs a click on the given selector after each
+    scroll, useful for "load more" buttons in infinite scroll scenarios.
+
+func WithScrollElement(selector string) ScrollOption
+    WithScrollElement sets a container element (via selector) within which to
+    scroll. Defaults to the page body.
+
+func WithScrollInfinite(iterations int) ScrollOption
+    WithScrollInfinite performs a specified number of "infinite scrolls" to the
+    bottom.
+
+func WithScrollToSelector(selector string) ScrollOption
+    WithScrollToSelector sets a target element (via selector) to scroll to.
+    Can also be "bottom".
+
+type SelectorState string
+    SelectorState defines the desired state of an element to wait for.
+
+const (
+	// SelectorStateVisible waits for the element to be present and visible in the DOM.
+	SelectorStateVisible SelectorState = "visible"
+	// SelectorStateHidden waits for the element to be removed or hidden from the DOM.
+	SelectorStateHidden SelectorState = "hidden"
+)
+type WaitForNavOption func(*waitForNavParams)
+    WaitForNavOption is a function that configures a wait_for_navigation action.
+
+func WithNavTimeout(milliseconds int) WaitForNavOption
+    WithNavTimeout sets the maximum time to wait for a navigation to occur.
+
+type WaitForSelectorOption func(*waitForSelectorParams)
+    WaitForSelectorOption is a function that configures a wait_for_selector
+    action.
+
+func WithSelectorState(state SelectorState) WaitForSelectorOption
+    WithSelectorState sets the desired state of the element to wait for (visible
+    or hidden).
+
+func WithSelectorTimeout(milliseconds int) WaitForSelectorOption
+    WithSelectorTimeout sets the maximum time to wait for the selector to reach
+    the desired state.
+
+
