@@ -27,7 +27,8 @@ bump:
 
 generate-docs:
 	@mkdir -p docs
-	go doc -all ./... > docs/go-reference.txt
+	@: > docs/go-reference.txt
+	@for pkg in $$(go list ./...); do go doc -all $$pkg >> docs/go-reference.txt; done
 
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=x.y.z [NEXT_VERSION=x.y.(z+1)]"; exit 2; fi

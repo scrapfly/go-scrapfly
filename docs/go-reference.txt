@@ -1,4 +1,3 @@
-=== github.com/scrapfly/go-scrapfly ===
 package scrapfly // import "github.com/scrapfly/go-scrapfly"
 
 Package scrapfly provides a Go SDK for the Scrapfly.io web scraping API.
@@ -292,6 +291,20 @@ func BoolPtr(v bool) *bool
 func GetAnyEnumFor[V Enumerable[T], T fmt.Stringer]() []any
 func GetEnumFor[V Enumerable[T], T fmt.Stringer]() []T
 func IsValidEnumType[T fmt.Stringer](f T) bool
+func ProjectSalt(apiKey string) string
+    ProjectSalt returns the deterministic project salt for an api key
+    (sha256(apiKey)[:8]). Matches the X-Browser-Project-Salt response header
+    returned on a successful Cloud Browser WebSocket upgrade.
+
+func ValidateAlertCreate(req AlertCreateRequest) error
+    ValidateAlertCreate runs the same checks the API performs server-side
+    (scrapfly-api/pkg/alert/validate.go). Use it to fail fast before the network
+    round-trip. It does NOT validate that the MetricID exists in the registry —
+    for that, call ListAlertMetricFamilies first.
+
+    Returns nil on success or an error whose Error() string is the same shape
+    the API would have returned (ERR::ALERT::* prefix + reason).
+
 func ValidateEnums(s interface{}) error
     ValidateEnums checks fields tagged with `validate:"enum"`. It calls the
     IsValid() bool method on the field if it's a single value, or on each
@@ -362,6 +375,281 @@ type AccountData struct {
 
     This includes subscription details, usage statistics, billing information,
     and account limits.
+
+type Alert struct {
+	UUID        string `json:"alert_uuid"`
+	ProjectUUID string `json:"project_uuid"`
+	ProjectName string `json:"project_name"`
+	UserUUID    string `json:"user_uuid"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	HmacKey     string `json:"hmac_key"`
+
+	MetricID         string          `json:"metric_id"`
+	MetricDimensions json.RawMessage `json:"metric_dimensions"`
+
+	Comparator         AlertComparator `json:"comparator"`
+	Threshold          float64         `json:"threshold"`
+	SustainedMinutes   int             `json:"sustained_minutes"`
+	RecoveryMinutes    int             `json:"recovery_minutes"`
+	EvaluationWindowM  int             `json:"evaluation_window_m"`
+	EvalCadenceSeconds int             `json:"eval_cadence_seconds"`
+
+	NotifyChannels  []AlertNotifyChannel `json:"notify_channels"`
+	RenotifyMinutes int                  `json:"renotify_minutes"`
+	NoDataPolicy    AlertNoDataPolicy    `json:"no_data_policy"`
+
+	State              AlertState `json:"state"`
+	StateSince         time.Time  `json:"state_since"`
+	LastNotifiedAt     *time.Time `json:"last_notified_at,omitempty"`
+	LastEvaluatedAt    *time.Time `json:"last_evaluated_at,omitempty"`
+	LastMetricValue    *float64   `json:"last_metric_value,omitempty"`
+	SnoozedUntil       *time.Time `json:"snoozed_until,omitempty"`
+	NotificationsToday int        `json:"notifications_today"`
+
+	ScheduleUUID *string `json:"schedule_uuid,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+    Alert is the full row mirror of alert_definition. Pointer fields map
+    to nullable SQL columns — nil means "never set" for last_notified_at,
+    last_evaluated_at, last_metric_value, snoozed_until, schedule_uuid.
+
+    HmacKey is the per-alert HMAC-SHA256 signing secret used to authenticate
+    webhook deliveries. Auto-generated on Create; read it from this struct to
+    configure your webhook verifier.
+
+type AlertComparator string
+    AlertComparator is the threshold comparison operator. Mirrors the Comparator
+    enum in scrapfly-api/pkg/alert/model.go. The API rejects any other string
+    with ERR::ALERT::INVALID_THRESHOLD.
+
+const (
+	AlertComparatorGt  AlertComparator = "gt"
+	AlertComparatorLt  AlertComparator = "lt"
+	AlertComparatorGte AlertComparator = "gte"
+	AlertComparatorLte AlertComparator = "lte"
+	AlertComparatorEq  AlertComparator = "eq"
+	AlertComparatorNeq AlertComparator = "neq"
+)
+type AlertCountActiveResult struct {
+	Count int `json:"count"`
+}
+    AlertCountActiveResult is the response from CountActiveAlerts — the count of
+    alerts currently in actively-firing states (triggered, pending, recovering).
+    Backs the sidebar badge in the dashboard.
+
+type AlertCreateRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ProjectUUID string `json:"project_uuid,omitempty"`
+	ProjectName string `json:"project_name,omitempty"`
+
+	MetricID         string          `json:"metric_id"`
+	MetricDimensions json.RawMessage `json:"metric_dimensions,omitempty"`
+
+	Comparator         AlertComparator `json:"comparator"`
+	Threshold          float64         `json:"threshold"`
+	SustainedMinutes   int             `json:"sustained_minutes,omitempty"`
+	RecoveryMinutes    int             `json:"recovery_minutes,omitempty"`
+	EvaluationWindowM  int             `json:"evaluation_window_m,omitempty"`
+	EvalCadenceSeconds int             `json:"eval_cadence_seconds,omitempty"`
+
+	NotifyChannels  []AlertNotifyChannel `json:"notify_channels"`
+	RenotifyMinutes int                  `json:"renotify_minutes,omitempty"`
+	NoDataPolicy    AlertNoDataPolicy    `json:"no_data_policy,omitempty"`
+}
+    AlertCreateRequest is the body for CreateAlert. ProjectUUID/ProjectName are
+    optional — when empty the API substitutes the caller's currently- selected
+    project (the dashboard's project switcher controls this).
+
+    Server-side defaults applied when zero values are sent:
+      - EvalCadenceSeconds: 300
+      - SustainedMinutes: metric family default (or 5)
+      - EvaluationWindowM: SustainedMinutes
+      - NoDataPolicy: ignore
+      - RenotifyMinutes: 60
+
+    ValidateAlertCreate runs the same checks the API enforces — call it before
+    sending the request to fail fast on the client.
+
+type AlertDeleteResult struct {
+	Deleted string `json:"deleted"`
+}
+    AlertDeleteResult is the response from DeleteAlert.
+
+type AlertListOptions struct {
+	ProjectUUID string
+	State       AlertState
+	MetricID    string
+}
+    AlertListOptions narrows ListAlerts. Empty fields are omitted from the query
+    string — pass an empty struct to get all alerts for the caller.
+
+type AlertMetricFamily struct {
+	ID                      string            `json:"id"`
+	DisplayName             string            `json:"display_name"`
+	Description             string            `json:"description"`
+	Unit                    string            `json:"unit"`
+	Product                 string            `json:"product"`
+	SourceTable             string            `json:"source_table"`
+	Expression              string            `json:"expression"`
+	BucketGrainMinutes      int               `json:"bucket_grain_minutes"`
+	AllowedDimensions       []string          `json:"allowed_dimensions"`
+	TagDimensions           map[string]string `json:"tag_dimensions,omitempty"`
+	DefaultSustainedMinutes int               `json:"default_sustained_minutes"`
+	TimeColumn              string            `json:"time_column"`
+	ProjectColumn           string            `json:"project_column"`
+}
+    AlertMetricFamily is one entry in the metric registry. The dashboard's
+    create wizard renders the metric picker from this list; SDK callers use
+    it to discover legal MetricID values and their allowed dimensions before
+    issuing CreateAlert.
+
+type AlertNoDataPolicy string
+    AlertNoDataPolicy controls what to do when the underlying ClickHouse rollup
+    returns no rows in the evaluation window. Mirrors NoDataPolicy in the API.
+
+const (
+	AlertNoDataOK        AlertNoDataPolicy = "ok"
+	AlertNoDataTriggered AlertNoDataPolicy = "triggered"
+	AlertNoDataIgnore    AlertNoDataPolicy = "ignore"
+)
+type AlertNotifyChannel struct {
+	Kind   AlertNotifyKind   `json:"kind"`
+	Target string            `json:"target"`
+	Opts   map[string]string `json:"opts,omitempty"`
+}
+    AlertNotifyChannel is a single configured delivery target on an alert.
+    Target is the email address, webhook URL, or empty string for inapp.
+    Opts carries channel-specific settings (e.g. custom webhook headers).
+
+type AlertNotifyKind string
+    AlertNotifyKind is the delivery channel for an alert notification. Mirrors
+    NotifyKind in the API.
+
+const (
+	AlertChannelEmail   AlertNotifyKind = "email"
+	AlertChannelWebhook AlertNotifyKind = "webhook"
+	AlertChannelInApp   AlertNotifyKind = "inapp"
+)
+type AlertPreviewFiredMarker struct {
+	FiredAt    time.Time  `json:"fired_at"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	PeakValue  float64    `json:"peak_value"`
+}
+    AlertPreviewFiredMarker identifies a TRIGGERED window discovered during a
+    historical preview replay. ResolvedAt is nil when the rule was still firing
+    at the end of the preview range.
+
+type AlertPreviewRequest struct {
+	MetricID         string          `json:"metric_id"`
+	MetricDimensions json.RawMessage `json:"metric_dimensions,omitempty"`
+	ProjectUUID      string          `json:"project_uuid,omitempty"`
+	ProjectName      string          `json:"project_name,omitempty"`
+	Comparator       AlertComparator `json:"comparator"`
+	Threshold        float64         `json:"threshold"`
+	SustainedMinutes int             `json:"sustained_minutes,omitempty"`
+	// EvaluationWindowM matches the live evaluator's window; defaults to
+	// SustainedMinutes server-side when zero.
+	EvaluationWindowM int               `json:"evaluation_window_m,omitempty"`
+	RangeMinutes      int               `json:"range_minutes,omitempty"` // default 1440 (24h)
+	NoDataPolicy      AlertNoDataPolicy `json:"no_data_policy,omitempty"`
+}
+    AlertPreviewRequest replays an unsaved rule against historical metric data
+    without persisting anything. Use it to answer "how many times would this
+    rule have fired in the last 24h?" before hitting Create.
+
+type AlertPreviewResponse struct {
+	Points        []AlertSeriesPoint        `json:"points"`
+	Threshold     float64                   `json:"threshold"`
+	Comparator    AlertComparator           `json:"comparator"`
+	Unit          string                    `json:"unit"`
+	BucketMinutes int                       `json:"bucket_minutes"`
+	FiredCount    int                       `json:"fired_count"`
+	Markers       []AlertPreviewFiredMarker `json:"markers"`
+}
+    AlertPreviewResponse is the payload returned by PreviewAlert. FiredCount is
+    len(Markers) — kept as an explicit field so callers can surface the headline
+    number without iterating.
+
+type AlertSeriesPoint struct {
+	T time.Time `json:"t"`
+	V float64   `json:"v"`
+}
+    AlertSeriesPoint is a single (time, value) pair in the metric series
+    returned by GetAlertSeries / PreviewAlert.
+
+type AlertSeriesResponse struct {
+	Points        []AlertSeriesPoint      `json:"points"`
+	Threshold     float64                 `json:"threshold"`
+	Comparator    AlertComparator         `json:"comparator"`
+	Transitions   []AlertTransitionMarker `json:"transitions"`
+	Unit          string                  `json:"unit"`
+	MetricID      string                  `json:"metric_id"`
+	BucketMinutes int                     `json:"bucket_minutes"`
+}
+    AlertSeriesResponse is the payload returned by GetAlertSeries — everything
+    a chart needs to plot the metric with the threshold band and state-change
+    transitions overlaid.
+
+type AlertSnoozeRequest struct {
+	Minutes       int  `json:"minutes,omitempty"`
+	UntilResolved bool `json:"until_resolved,omitempty"`
+}
+    AlertSnoozeRequest is the body for SnoozeAlert. Set Minutes for a time-bound
+    snooze, OR UntilResolved=true to mute indefinitely until the next OK
+    transition. Exactly one MUST be provided.
+
+type AlertState string
+    AlertState is the lifecycle state of an alert definition. Mirrors the
+    AlertState enum in scrapfly-api/pkg/alert/model.go.
+
+const (
+	AlertStateOK         AlertState = "ok"
+	AlertStatePending    AlertState = "pending"
+	AlertStateTriggered  AlertState = "triggered"
+	AlertStateRecovering AlertState = "recovering"
+	AlertStateNoData     AlertState = "no_data"
+	AlertStateSnoozed    AlertState = "snoozed"
+)
+type AlertTestResult struct {
+	OK        bool   `json:"ok"`
+	AlertUUID string `json:"alert_uuid"`
+	Channels  int    `json:"channels"`
+	EventID   string `json:"event_id"`
+}
+    AlertTestResult is the response from TestAlert — a synthetic notification
+    fired on every configured channel without touching alert state.
+
+type AlertTransitionMarker struct {
+	T    time.Time  `json:"t"`
+	From AlertState `json:"from"`
+	To   AlertState `json:"to"`
+}
+    AlertTransitionMarker is a state-change event overlaid on the graph.
+
+type AlertUpdateRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+
+	Comparator        *AlertComparator `json:"comparator,omitempty"`
+	Threshold         *float64         `json:"threshold,omitempty"`
+	SustainedMinutes  *int             `json:"sustained_minutes,omitempty"`
+	RecoveryMinutes   *int             `json:"recovery_minutes,omitempty"`
+	EvaluationWindowM *int             `json:"evaluation_window_m,omitempty"`
+
+	NotifyChannels  []AlertNotifyChannel `json:"notify_channels,omitempty"`
+	RenotifyMinutes *int                 `json:"renotify_minutes,omitempty"`
+	NoDataPolicy    *AlertNoDataPolicy   `json:"no_data_policy,omitempty"`
+}
+    AlertUpdateRequest is the body for UpdateAlert. All fields are pointers so
+    the caller can distinguish "omit" from "set to zero" — only non-nil fields
+    are applied server-side. Each successful update auto-snoozes the alert for
+    SustainedMinutes so a tuning iteration doesn't refire on the next eval tick.
 
 type Attachment struct {
 	Content           string `json:"content"`
@@ -526,7 +814,11 @@ func (c *Client) Classify(ctx context.Context, req *ClassifyRequest) (*ClassifyR
     contract.
 
 func (c *Client) CloudBrowser(config *CloudBrowserConfig) string
-    WebSocketURL returns the Cloud Browser WebSocket connection URL.
+    CloudBrowser returns the Cloud Browser WebSocket connection URL.
+
+    On rejection the server sends a JSON error frame then a close frame
+    with code 1008/1011/1013 and a "ERR::BROWSER::CODE: reason" string.
+    See https://scrapfly.io/docs/cloud-browser-api/errors#websocket-close-frame
 
 func (c *Client) CloudBrowserExtensionDelete(extensionID string) (map[string]interface{}, error)
     CloudBrowserExtensionDelete deletes a browser extension by ID.
@@ -543,6 +835,11 @@ func (c *Client) CloudBrowserExtensionUpload(filePath string) (map[string]interf
 
 func (c *Client) CloudBrowserPlayback(runID string) (map[string]interface{}, error)
     CloudBrowserPlayback returns debug recording metadata for a given run ID.
+    The response carries `available`, `status` (one of `ready`, `uploading`,
+    `unavailable`, `disabled`), `metadata`, `video_url`, and `retry_after_ms`.
+
+func (c *Client) CloudBrowserProjectSalt() string
+    CloudBrowserProjectSalt returns the project salt for this client's api key.
 
 func (c *Client) CloudBrowserSessionStop(sessionID string) error
     CloudBrowserSessionStop terminates a browser session.
@@ -554,9 +851,86 @@ func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, erro
     CloudBrowserUnblock bypasses anti-bot protection and returns a WebSocket URL
     to a browser with cookies/state pre-loaded.
 
+func (c *Client) CloudBrowserVaultCreate(name, description string) (map[string]interface{}, error)
+    CloudBrowserVaultCreate creates a new credential vault.
+
+    The response includes a freshly minted base64 32-byte vault key under the
+    `key` field. The server emits this exactly once — callers MUST store it
+    locally. It is required for any subsequent item read/write or for vault
+    rotation.
+
+func (c *Client) CloudBrowserVaultDelete(vaultID string) (map[string]interface{}, error)
+    CloudBrowserVaultDelete removes a vault and every item it holds. Cannot be
+    reversed.
+
+func (c *Client) CloudBrowserVaultGet(vaultID string) (map[string]interface{}, error)
+    CloudBrowserVaultGet returns the metadata for one vault. No secret material
+    is included in the response.
+
+func (c *Client) CloudBrowserVaultItemCreate(vaultID, vaultKey string, item map[string]interface{}) (map[string]interface{}, error)
+    CloudBrowserVaultItemCreate adds a credential to a vault. The item payload
+    follows the controller's typed shape:
+
+        map[string]interface{}{
+            "type":   "password",
+            "label":  "web-scraping.dev test",
+            "origin": "https://web-scraping.dev/password-manager-test",
+            "username": "user123",
+            "secret": map[string]interface{}{"password": "password"},
+        }
+
+    vaultKey is forwarded as the X-Vault-Key header. Treat it as secret material
+    — the SDK will not log it.
+
+func (c *Client) CloudBrowserVaultItemDelete(vaultID, itemID string) (map[string]interface{}, error)
+    CloudBrowserVaultItemDelete removes a single item from a vault. No vault key
+    is required — the row is dropped without decryption.
+
+func (c *Client) CloudBrowserVaultItemList(vaultID string) (map[string]interface{}, error)
+    CloudBrowserVaultItemList returns every item in a vault.
+
+    The server returns metadata + the envelope-encrypted secret_blob — plaintext
+    secrets are not exposed by this endpoint and never reach the SDK. To read
+    plaintext, the dashboard performs WebCrypto on the blob locally with the
+    customer-held vault key.
+
+func (c *Client) CloudBrowserVaultItemUpdate(vaultID, itemID, vaultKey string, patch map[string]interface{}) (map[string]interface{}, error)
+    CloudBrowserVaultItemUpdate patches a vault item.
+
+    Pass vaultKey only when the patch includes secret rotation — i.e.
+    a non-nil "secret" key in `patch`. For metadata-only patches (label, origin,
+    username), pass an empty string and the X-Vault-Key header is not sent.
+
+func (c *Client) CloudBrowserVaultList() (map[string]interface{}, error)
+    CloudBrowserVaultList returns every vault visible to the API key in the
+    current project + environment. Response shape: {vaults: [...]}.
+
+func (c *Client) CloudBrowserVaultRotate(vaultID, currentVaultKey string) (map[string]interface{}, error)
+    CloudBrowserVaultRotate rotates the vault key. The OLD key MUST be supplied
+    as currentVaultKey — the API uses it to decrypt every item and rewraps each
+    per-row DEK under a freshly generated key, returned exactly once in the
+    `key` field of the response. After this call the old key cannot read any
+    item in the vault.
+
+    currentVaultKey is forwarded as the X-Vault-Key header. It is NEVER logged,
+    included in error messages, or echoed back via Recorder breadcrumbs — see
+    the security contract at the top of this section.
+
+func (c *Client) CloudBrowserVaultUpdate(vaultID string, name, description string) (map[string]interface{}, error)
+    CloudBrowserVaultUpdate patches a vault's metadata. Empty-string args are
+    treated as "no change" and omitted from the wire payload — pass only the
+    fields you want to overwrite.
+
 func (c *Client) CloudBrowserVideo(runID string) ([]byte, error)
     CloudBrowserVideo downloads a debug session recording video. Returns the raw
     video bytes (webm format).
+
+func (c *Client) CloudBrowserWaitForPlayback(runID string, timeout, fallbackInterval time.Duration) (map[string]interface{}, error)
+    CloudBrowserWaitForPlayback polls the playback endpoint until the recording
+    resolves to a terminal state (`ready` or `unavailable`) or the timeout
+    elapses. It honours the server's `retry_after_ms` hint when present,
+    and falls back to fallbackInterval otherwise. Pass timeout == 0 to fall back
+    to 3 minutes; fallbackInterval == 0 falls back to 3 seconds.
 
 func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan ConcurrentScrapeResult
             if item.Error != nil {
@@ -565,6 +939,12 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
             }
             fmt.Println(item.Result.Result.Content)
         }
+
+func (c *Client) CountActiveAlerts(projectUUID string) (*AlertCountActiveResult, error)
+    CountActiveAlerts returns the count of alerts currently in actively- firing
+    states (triggered, pending, recovering) for the caller. Cheap — designed for
+    sub-millisecond badge rendering in the dashboard. projectUUID is optional;
+    empty string means "all projects".
 
 func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*CrawlerArtifact, error)
     CrawlArtifact downloads a crawler job's WARC or HAR artifact.
@@ -643,11 +1023,25 @@ func (c *Client) CrawlURLs(uuid string, opts *CrawlURLsOptions) (*CrawlerURLs, e
     Pagination: the wire protocol carries no global total count. Request further
     pages by incrementing Page until an empty response.
 
+func (c *Client) CreateAlert(req AlertCreateRequest) (*Alert, error)
+    CreateAlert persists a new alert definition. The returned Alert carries the
+    server-assigned UUID, the auto-generated HMAC signing key, and the resolved
+    server-side defaults for any zero-value fields in the request.
+
+    Calling ValidateAlertCreate(req) first is recommended — it runs the same
+    checks server-side, so a successful local validation avoids one network
+    round-trip per bad payload.
+
 func (c *Client) CreateCrawlerSchedule(crawlerConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
 
 func (c *Client) CreateScrapeSchedule(scrapeConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
 
 func (c *Client) CreateScreenshotSchedule(screenshotConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+
+func (c *Client) DeleteAlert(alertUUID string) (*AlertDeleteResult, error)
+    DeleteAlert removes an alert definition. Returns {"deleted": "<uuid>"}.
+    Idempotent on the happy path; calling twice for the same UUID returns 404
+    (ERR::ALERT::NOT_FOUND) on the second call.
 
 func (c *Client) ExecuteSchedule(id string) (*Schedule, error)
 
@@ -669,6 +1063,19 @@ func (c *Client) Extract(config *ExtractionConfig) (*ExtractionResult, error)
             log.Fatal(err)
         }
         fmt.Printf("Extracted data: %+v\n", result.Data)
+
+func (c *Client) GetAlert(alertUUID string) (*Alert, error)
+    GetAlert fetches one alert definition by UUID.
+
+    Returns an *APIError with HTTPStatusCode 404 (Code ERR::ALERT::NOT_FOUND)
+    for both "doesn't exist" and "not yours" — the API deliberately collapses
+    these to prevent enumeration. Don't try to distinguish them.
+
+func (c *Client) GetAlertSeries(alertUUID string, rangeMinutes int) (*AlertSeriesResponse, error)
+    GetAlertSeries returns the time-series metric data + state-change
+    transitions for an alert. rangeMinutes is the lookback window (default 240
+    = 4h; max 7*24*60 = 10080 = 7 days). Values outside that bound are silently
+    clamped to the default by the API.
 
 func (c *Client) GetBrowserMonitoringMetrics(opts CloudBrowserMonitoringOptions) (map[string]any, error)
 
@@ -696,6 +1103,23 @@ func (c *Client) HTTPClient() *http.Client
     HTTPClient returns the *http.Client used by this Scrapfly client. Useful if
     callers want to wrap the existing transport instead of replacing it.
 
+func (c *Client) ListAlertMetricFamilies() ([]AlertMetricFamily, error)
+    ListAlertMetricFamilies returns the full metric registry (~19 entries at the
+    time of writing). Use it to discover legal MetricID values before issuing
+    CreateAlert, and to discover each metric's allowed dimensions and native
+    bucket grain.
+
+func (c *Client) ListAlerts(opts AlertListOptions) ([]Alert, error)
+    ListAlerts returns every alert definition owned by the caller. Filters in
+    opts narrow the result server-side — pass an empty AlertListOptions{} to get
+    all rows.
+
+    Example:
+
+        alerts, err := client.ListAlerts(scrapfly.AlertListOptions{
+            State: scrapfly.AlertStateTriggered,
+        })
+
 func (c *Client) ListCrawlerSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
 
 func (c *Client) ListSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
@@ -705,6 +1129,11 @@ func (c *Client) ListScrapeSchedules(opts *ListSchedulesOptions) ([]Schedule, er
 func (c *Client) ListScreenshotSchedules(opts *ListSchedulesOptions) ([]Schedule, error)
 
 func (c *Client) PauseSchedule(id string) (*Schedule, error)
+
+func (c *Client) PreviewAlert(req AlertPreviewRequest) (*AlertPreviewResponse, error)
+    PreviewAlert replays an unsaved rule against historical data and returns
+    "would-have-fired" markers — without creating the alert. Useful for tuning
+    thresholds before committing.
 
 func (c *Client) ResumeSchedule(id string) (*Schedule, error)
 
@@ -837,6 +1266,11 @@ func (c *Client) SetHTTPClient(httpClient *http.Client)
             Timeout:   150 * time.Second,
         })
 
+func (c *Client) SnoozeAlert(alertUUID string, req AlertSnoozeRequest) (*Alert, error)
+    SnoozeAlert mutes notifications. Provide either Minutes>0 OR
+    UntilResolved=true (not both) — the API rejects neither-or-both with
+    ERR::ALERT::INVALID_SUSTAINED_WINDOW.
+
 func (c *Client) StartCrawl(config *CrawlerConfig) (*CrawlerStartResponse, error)
     StartCrawl schedules a new crawler job and returns the crawler UUID.
 
@@ -856,6 +1290,26 @@ func (c *Client) StartCrawl(config *CrawlerConfig) (*CrawlerStartResponse, error
             log.Fatal(err)
         }
         fmt.Println("uuid:", start.CrawlerUUID)
+
+func (c *Client) TestAlert(alertUUID string) (*AlertTestResult, error)
+    TestAlert fires a one-shot synthetic notification on every configured
+    channel WITHOUT touching alert state or the state machine. Useful for
+    verifying webhook URLs and email addresses without waiting for a real
+    transition.
+
+    Dedup: two test fires within the same UTC minute share the same dedup key
+    — the second is suppressed and the response carries the same EventID.
+    This is intentional (matches the dashboard's UI rate-limit).
+
+func (c *Client) UnsnoozeAlert(alertUUID string) (*Alert, error)
+    UnsnoozeAlert lifts any active snooze, resuming normal notification delivery
+    on the next evaluator tick.
+
+func (c *Client) UpdateAlert(alertUUID string, req AlertUpdateRequest) (*Alert, error)
+    UpdateAlert patches an existing alert. All AlertUpdateRequest fields are
+    pointers — only non-nil fields are applied. The alert is auto- snoozed for
+    SustainedMinutes after a successful update, preventing notification spam
+    during threshold tuning.
 
 func (c *Client) UpdateSchedule(id string, req *UpdateScheduleRequest) (*Schedule, error)
 
@@ -916,6 +1370,41 @@ type CloudBrowserConfig struct {
 	// a failed attempt (captchaError) costs nothing.
 	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
 	SolveCaptcha bool `json:"solve_captcha,omitempty"`
+
+	// Vault is the credential vault NAME to attach to the session — the
+	// alphanumeric name you gave it at create time. The API resolves it to
+	// the vault scoped to your api-key's project and environment, then
+	// injects its credentials (passwords, passkeys, cookies, TOTP codes)
+	// into matching origins via CDP. Pair with VaultKey — the customer-held
+	// base64 32-byte key the API needs to decrypt the vault for this session
+	// only. Both land on the wss:// URL as query parameters; the API never
+	// persists VaultKey.
+	//
+	// Treat VaultKey as secret material — never log it.
+	Vault    string `json:"vault,omitempty"`
+	VaultKey string `json:"vault_key,omitempty"`
+
+	// EnableVNC turns on the human-in-the-loop VNC channel (operator attach
+	// via Scrapfly's VNC mux at :5901).
+	EnableVNC bool `json:"enable_vnc,omitempty"`
+
+	// VNCPassword is the customer-chosen VNC password. Required when
+	// EnableVNC is true and HITLAllowedNetworks is empty.
+	VNCPassword string `json:"vnc_password,omitempty"`
+
+	// EnableRTC turns on the human-in-the-loop WebRTC channel.
+	EnableRTC bool `json:"enable_rtc,omitempty"`
+
+	// RTCUsername is the WebRTC username. Defaults to "scrapfly" server-side.
+	RTCUsername string `json:"rtc_username,omitempty"`
+
+	// RTCPassword is the customer-chosen WebRTC password. Required when
+	// EnableRTC is true and HITLAllowedNetworks is empty.
+	RTCPassword string `json:"rtc_password,omitempty"`
+
+	// HITLAllowedNetworks lists source IPs / CIDRs trusted to attach to
+	// the HITL channels (VNC + WebRTC + downloads) without credentials.
+	HITLAllowedNetworks []string `json:"hitl_allowed_networks,omitempty"`
 }
     CloudBrowserConfig configures a Cloud Browser session.
 
@@ -1272,8 +1761,12 @@ const (
     Artifact type values accepted by GET /crawl/{uuid}/artifact?type=...
 
 type CrawlerConfig struct {
-	// URL is the starting URL for the crawl (required). Must be HTTP/HTTPS.
-	URL string `required:"true"`
+	// URL source — exactly one of URL, URLList, RemoteURLList. URL enables
+	// discovery (sitemaps, robots.txt, link-following); URLList and
+	// RemoteURLList crawl exactly the URLs they reference, no discovery.
+	URL           string
+	URLList       []string
+	RemoteURLList string
 
 	// Crawl limits. Zero means "unset" — the server applies its own default.
 	PageLimit    int
@@ -1328,9 +1821,10 @@ type CrawlerConfig struct {
 }
     CrawlerConfig configures a Scrapfly Crawler API job.
 
-    Every field except URL is optional. Fields left at their zero value are
-    NOT sent to the API so the server applies its own documented defaults (e.g.
-    respect_robots_txt defaults to true).
+    Exactly one URL source must be provided: URL (seed crawl with discovery),
+    URLList (explicit in-memory list, no discovery), or RemoteURLList (URL of
+    a hosted text file fetched at crawl start, no discovery). Other fields are
+    optional and default to server-side values when zero-valued.
 
     Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains) use *bool so
     the SDK can distinguish "unset" from "explicit false". Setting a bool field
@@ -2049,6 +2543,8 @@ const (
 	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
 	// PublicResidentialPool uses residential proxies. More expensive but harder to detect.
 	PublicResidentialPool ProxyPool = "public_residential_pool"
+	// PublicTorPool routes egress through the Tor network for .onion hidden services and OSINT.
+	PublicTorPool ProxyPool = "public_tor_pool"
 )
     Available proxy pool types for Scrapfly API requests.
 
@@ -2165,7 +2661,8 @@ type ScrapeConfig struct {
 	// Session maintains a persistent browser session across requests.
 	Session string
 	// SessionStickyProxy keeps the same proxy for all requests in a session.
-	SessionStickyProxy bool
+	// nil means the server default (sticky on); set to &false to opt out.
+	SessionStickyProxy *bool
 	// Tags are custom tags for organizing and filtering requests.
 	Tags []string
 	// Webhook is the name of a webhook to call after the request completes.
@@ -2576,10 +3073,12 @@ type URIContext struct {
 type UnblockConfig struct {
 	URL            string `json:"url"`
 	Country        string `json:"country,omitempty"`
+	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos
+	BrowserBrand   string `json:"browser_brand,omitempty"`   // Fingerprint browser brand: chrome, edge, brave, opera
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
 	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
-	SolveCaptcha   bool   `json:"solve_captcha,omitempty"`   // Arm the captcha solver on the post-unblock session
+	Debug          bool   `json:"debug,omitempty"`           // Record the session for replay via CloudBrowserPlayback / CloudBrowserVideo
 }
     UnblockConfig configures an unblock request.
 
@@ -2732,25 +3231,17 @@ type WarcRecord struct {
     Mirrors the dataclass exposed by the Python SDK's `WarcRecord`.
 
 
-=== github.com/scrapfly/go-scrapfly/examples ===
-
-
-=== github.com/scrapfly/go-scrapfly/examples/batch ===
 Scrape multiple URLs in a single request using the Batch Scraping API.
 
 ScrapeBatch accepts up to 100 ScrapeConfigs and streams each result through
 the returned channel as soon as it's ready. Results arrive OUT OF ORDER — use
 CorrelationID on every config to match each result back to its originating
 request.
-
-=== github.com/scrapfly/go-scrapfly/examples/batch/msgpack ===
 Use msgpack wire encoding for per-part bodies in a batch.
 
 Msgpack produces slightly smaller payloads than JSON and decodes faster.
 Pass BatchOptions{Format: BatchFormatMsgpack} via ScrapeBatchWithOptions to opt
 in — the SDK handles decoding transparently.
-
-=== github.com/scrapfly/go-scrapfly/examples/batch/proxified ===
 Mix proxified and JSON-envelope scrapes in a single batch.
 
 A config with ProxifiedResponse=true returns the raw upstream response (HTML,
@@ -2758,10 +3249,6 @@ JSON, binary, etc.) instead of Scrapfly's JSON envelope. In a batch,
 proxified parts surface as an *http.Response on BatchResult.ProxifiedResponse;
 normal parts surface as *ScrapeResult on BatchResult.Result.
 
-=== github.com/scrapfly/go-scrapfly/examples/cloud_browser ===
-
-
-=== github.com/scrapfly/go-scrapfly/scenario ===
 package js_scenario // import "github.com/scrapfly/go-scrapfly/scenario"
 
 Package scenario provides a fluent builder for creating Scrapfly API JS
@@ -2963,5 +3450,4 @@ func WithSelectorState(state SelectorState) WaitForSelectorOption
 func WithSelectorTimeout(milliseconds int) WaitForSelectorOption
     WithSelectorTimeout sets the maximum time to wait for the selector to reach
     the desired state.
-
 
