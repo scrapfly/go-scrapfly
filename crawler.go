@@ -38,7 +38,24 @@ func (c *Client) StartCrawl(config *CrawlerConfig) (*CrawlerStartResponse, error
 		return nil, fmt.Errorf("%w: config is nil", ErrCrawlerConfig)
 	}
 
-	body, err := config.toJSONBody()
+	// POST /crawl accepts two body formats:
+	//   - application/json: the full crawler configuration as JSON.
+	//     Used for seed-URL crawls and remote_url_list crawls.
+	//   - multipart/form-data: a 'config' JSON part and a 'urls' text part
+	//     (one URL per line). Used only when the caller provides an
+	//     in-memory URLList, so the URLs are uploaded as a streamed file
+	//     payload instead of inlined into the JSON body.
+	var (
+		body        []byte
+		contentType string
+		err         error
+	)
+	if len(config.URLList) > 0 {
+		body, contentType, err = config.toMultipartBody()
+	} else {
+		body, err = config.toJSONBody()
+		contentType = "application/json"
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +74,7 @@ func (c *Client) StartCrawl(config *CrawlerConfig) (*CrawlerStartResponse, error
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)

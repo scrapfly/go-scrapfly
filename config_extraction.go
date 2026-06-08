@@ -105,7 +105,7 @@ func (c *ExtractionConfig) toAPIParams() (url.Values, error) {
 		return nil, fmt.Errorf("%w: cannot use both extraction_template and extraction_ephemeral_template", ErrExtractionConfig)
 	}
 	if c.ExtractionTemplate != "" {
-		params.Set("extraction_template", c.ExtractionTemplate)
+		params.Set("extraction_template", "persistent:"+c.ExtractionTemplate)
 	}
 	if c.ExtractionEphemeralTemplate != nil {
 		templateJSON, err := json.Marshal(c.ExtractionEphemeralTemplate)

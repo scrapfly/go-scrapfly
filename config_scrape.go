@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
@@ -61,7 +62,8 @@ type ScrapeConfig struct {
 	// Session maintains a persistent browser session across requests.
 	Session string
 	// SessionStickyProxy keeps the same proxy for all requests in a session.
-	SessionStickyProxy bool
+	// nil means the server default (sticky on); set to &false to opt out.
+	SessionStickyProxy *bool
 	// Tags are custom tags for organizing and filtering requests.
 	Tags []string
 	// Webhook is the name of a webhook to call after the request completes.
@@ -339,8 +341,8 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 
 	if c.Session != "" {
 		params.Set("session", c.Session)
-		if c.SessionStickyProxy {
-			params.Set("session_sticky_proxy", "true")
+		if c.SessionStickyProxy != nil {
+			params.Set("session_sticky_proxy", strconv.FormatBool(*c.SessionStickyProxy))
 		}
 	}
 
@@ -379,7 +381,7 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 	}
 
 	if c.ExtractionTemplate != "" {
-		params.Set("extraction_template", c.ExtractionTemplate)
+		params.Set("extraction_template", "persistent:"+c.ExtractionTemplate)
 	} else if c.ExtractionEphemeralTemplate != nil {
 		templateJSON, _ := json.Marshal(c.ExtractionEphemeralTemplate)
 		params.Set("extraction_template", "ephemeral:"+urlSafeB64Encode(string(templateJSON)))

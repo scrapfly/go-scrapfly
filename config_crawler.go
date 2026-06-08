@@ -1,8 +1,12 @@
 package scrapfly
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"net/textproto"
+	"strings"
 )
 
 // CrawlerContentFormat represents the content format to extract from crawled pages.
@@ -72,17 +76,22 @@ func (e CrawlerWebhookEvent) String() string { return string(e) }
 
 // CrawlerConfig configures a Scrapfly Crawler API job.
 //
-// Every field except URL is optional. Fields left at their zero value are NOT
-// sent to the API so the server applies its own documented defaults (e.g.
-// respect_robots_txt defaults to true).
+// Exactly one URL source must be provided: URL (seed crawl with discovery),
+// URLList (explicit in-memory list, no discovery), or RemoteURLList (URL of
+// a hosted text file fetched at crawl start, no discovery). Other fields are
+// optional and default to server-side values when zero-valued.
 //
 // Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains) use *bool so
 // the SDK can distinguish "unset" from "explicit false". Setting a bool field
 // directly (e.g. UseSitemaps=true) is sent as-is; only the tri-state fields
 // need pointer semantics.
 type CrawlerConfig struct {
-	// URL is the starting URL for the crawl (required). Must be HTTP/HTTPS.
-	URL string `required:"true"`
+	// URL source — exactly one of URL, URLList, RemoteURLList. URL enables
+	// discovery (sitemaps, robots.txt, link-following); URLList and
+	// RemoteURLList crawl exactly the URLs they reference, no discovery.
+	URL           string
+	URLList       []string
+	RemoteURLList string
 
 	// Crawl limits. Zero means "unset" — the server applies its own default.
 	PageLimit    int
@@ -136,29 +145,42 @@ type CrawlerConfig struct {
 	WebhookEvents []CrawlerWebhookEvent `validate:"enum"`
 }
 
-// toJSONBody serializes the config into a JSON body for POST /crawl.
-//
-// Unlike ScrapeConfig.toAPIParams (which builds URL query parameters), the
-// Crawler API takes its config as a JSON body. The API key is NOT included
-// here — it's added to the URL query string by the client method.
-//
-// Zero-valued fields are dropped so the server applies its own defaults.
-func (c *CrawlerConfig) toJSONBody() ([]byte, error) {
-	if err := ValidateRequiredFields(c); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+// validateUrlSource enforces the URL-source mutex: exactly one of URL,
+// URLList, or RemoteURLList must be set. Returns ErrCrawlerConfig wrapping
+// a human-readable error.
+func (c *CrawlerConfig) validateUrlSource() error {
+	hasSeed := c.URL != ""
+	hasList := len(c.URLList) > 0
+	hasRemote := c.RemoteURLList != ""
+	count := 0
+	if hasSeed {
+		count++
 	}
-	if err := ValidateExclusiveFields(c); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	if hasList {
+		count++
 	}
-	if err := ValidateEnums(c); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	if hasRemote {
+		count++
 	}
-	if err := c.validateBounds(); err != nil {
-		return nil, err
+	if count == 0 {
+		return fmt.Errorf("%w: provide one of URL, URLList, or RemoteURLList", ErrCrawlerConfig)
 	}
+	if count > 1 {
+		return fmt.Errorf("%w: only one of URL, URLList, or RemoteURLList can be set", ErrCrawlerConfig)
+	}
+	return nil
+}
 
-	body := map[string]interface{}{
-		"url": c.URL,
+// buildBodyMap assembles the crawler config as a map. URLList is omitted —
+// callers that need it serialize the list separately (in-memory list goes
+// out as a multipart 'urls' part; otherwise the JSON path inlines it).
+func (c *CrawlerConfig) buildBodyMap() map[string]interface{} {
+	body := map[string]interface{}{}
+	if c.URL != "" {
+		body["url"] = c.URL
+	}
+	if c.RemoteURLList != "" {
+		body["remote_url_list"] = c.RemoteURLList
 	}
 	if c.PageLimit != 0 {
 		body["page_limit"] = c.PageLimit
@@ -258,7 +280,92 @@ func (c *CrawlerConfig) toJSONBody() ([]byte, error) {
 		body["webhook_events"] = events
 	}
 
+	return body
+}
+
+// toJSONBody serializes the config into a JSON body for POST /crawl. Used
+// for seed-URL crawls and remote_url_list crawls — for in-memory URL lists
+// the SDK switches to multipart (see toMultipartBody).
+//
+// Zero-valued fields are dropped so the server applies its own defaults.
+func (c *CrawlerConfig) toJSONBody() ([]byte, error) {
+	if err := c.validateUrlSource(); err != nil {
+		return nil, err
+	}
+	if err := ValidateExclusiveFields(c); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	}
+	if err := ValidateEnums(c); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	}
+	if err := c.validateBounds(); err != nil {
+		return nil, err
+	}
+
+	body := c.buildBodyMap()
+	if len(c.URLList) > 0 {
+		body["url_list"] = c.URLList
+	}
 	return json.Marshal(body)
+}
+
+// toMultipartBody builds a multipart/form-data body for POST /crawl when an
+// in-memory URLList is supplied. The 'config' part carries the JSON config
+// (without url_list) and the 'urls' part carries the URLs as text/plain,
+// one per line. Returns the body bytes and the matching Content-Type
+// header (with the boundary baked in).
+func (c *CrawlerConfig) toMultipartBody() ([]byte, string, error) {
+	if err := c.validateUrlSource(); err != nil {
+		return nil, "", err
+	}
+	if err := ValidateExclusiveFields(c); err != nil {
+		return nil, "", fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	}
+	if err := ValidateEnums(c); err != nil {
+		return nil, "", fmt.Errorf("%w: %w", ErrCrawlerConfig, err)
+	}
+	if err := c.validateBounds(); err != nil {
+		return nil, "", err
+	}
+	if len(c.URLList) == 0 {
+		return nil, "", fmt.Errorf("%w: toMultipartBody requires URLList to be set", ErrCrawlerConfig)
+	}
+
+	configJSON, err := json.Marshal(c.buildBodyMap())
+	if err != nil {
+		return nil, "", err
+	}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+
+	cfgHdr := make(textproto.MIMEHeader)
+	cfgHdr.Set("Content-Disposition", `form-data; name="config"; filename="config.json"`)
+	cfgHdr.Set("Content-Type", "application/json")
+	cfgPart, err := mw.CreatePart(cfgHdr)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := cfgPart.Write(configJSON); err != nil {
+		return nil, "", err
+	}
+
+	urlsHdr := make(textproto.MIMEHeader)
+	urlsHdr.Set("Content-Disposition", `form-data; name="urls"; filename="urls.txt"`)
+	urlsHdr.Set("Content-Type", "text/plain")
+	urlsPart, err := mw.CreatePart(urlsHdr)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := urlsPart.Write([]byte(strings.Join(c.URLList, "\n"))); err != nil {
+		return nil, "", err
+	}
+
+	if err := mw.Close(); err != nil {
+		return nil, "", err
+	}
+
+	return buf.Bytes(), mw.FormDataContentType(), nil
 }
 
 // validateBounds enforces the numeric bounds documented in the public API.

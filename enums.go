@@ -91,10 +91,12 @@ const (
 	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
 	// PublicResidentialPool uses residential proxies. More expensive but harder to detect.
 	PublicResidentialPool ProxyPool = "public_residential_pool"
+	// PublicTorPool routes egress through the Tor network for .onion hidden services and OSINT.
+	PublicTorPool ProxyPool = "public_tor_pool"
 )
 
 func (f ProxyPool) Enum() []ProxyPool {
-	return []ProxyPool{PublicDataCenterPool, PublicResidentialPool}
+	return []ProxyPool{PublicDataCenterPool, PublicResidentialPool, PublicTorPool}
 }
 
 func (f ProxyPool) String() string {
@@ -105,7 +107,7 @@ func (f ProxyPool) String() string {
 }
 
 func (f ProxyPool) AnyEnum() []any {
-	return []any{PublicDataCenterPool, PublicResidentialPool}
+	return []any{PublicDataCenterPool, PublicResidentialPool, PublicTorPool}
 }
 func (f ProxyPool) IsValid() bool {
 	return IsValidEnumType(f)
