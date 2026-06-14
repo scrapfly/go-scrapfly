@@ -243,6 +243,7 @@ type UnblockConfig struct {
 	Country        string `json:"country,omitempty"`
 	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos
 	BrowserBrand   string `json:"browser_brand,omitempty"`   // Fingerprint browser brand: chrome, edge, brave, opera
+	Session        string `json:"session,omitempty"`         // Named session for reconnection — reuses an existing ASP session and disables auto-close
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
 	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
