@@ -258,6 +258,18 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 
 			partContentType := strings.ToLower(part.Header.Get("Content-Type"))
 
+			partStatus, _ := strconv.Atoi(part.Header.Get("X-Scrapfly-Scrape-Status"))
+			if partStatus >= 400 {
+				if apiErr := apiErrorFromBatchPart(partContentType, partBytes, partStatus); apiErr != nil {
+					results <- BatchResult{
+						CorrelationID: correlationID,
+						Err:           apiErr,
+					}
+
+					continue
+				}
+			}
+
 			var result ScrapeResult
 			var decodeErr error
 
@@ -297,6 +309,108 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 	}()
 
 	return results, nil
+}
+
+// batchErrorProbe decodes the fields of an API error part body;
+// Result and Config are envelope presence probes.
+type batchErrorProbe struct {
+	Code      string            `json:"code"`
+	Message   string            `json:"message"`
+	Reason    string            `json:"reason"`
+	HTTPCode  int               `json:"http_code"`
+	Retryable bool              `json:"retryable"`
+	Links     map[string]string `json:"links"`
+	Result    *struct{}         `json:"result"`
+	Config    *struct{}         `json:"config"`
+}
+
+// apiErrorFromBatchPart converts an API-generated error part into a
+// sentinel-wrapped *APIError. Returns nil when the body is a scrape
+// envelope.
+func apiErrorFromBatchPart(contentType string, body []byte, partStatus int) error {
+	var probe batchErrorProbe
+
+	switch {
+	case strings.HasPrefix(contentType, "application/json"):
+		if err := json.Unmarshal(body, &probe); err != nil {
+			return nil
+		}
+	case strings.HasPrefix(contentType, "application/msgpack"),
+		strings.HasPrefix(contentType, "application/x-msgpack"):
+		dec := msgpack.NewDecoder(bytes.NewReader(body))
+		dec.SetCustomStructTag("json")
+		if err := dec.Decode(&probe); err != nil {
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	if probe.Result != nil || probe.Config != nil {
+		return nil
+	}
+
+	message := probe.Message
+	if message == "" {
+		message = probe.Reason
+	}
+	if message == "" {
+		message = "API error"
+	}
+
+	httpCode := probe.HTTPCode
+	if httpCode == 0 {
+		httpCode = partStatus
+	}
+
+	docURL := ""
+	for _, v := range probe.Links {
+		docURL = v
+		break
+	}
+
+	apiErr := &APIError{
+		Message:          message,
+		Code:             probe.Code,
+		HTTPStatusCode:   httpCode,
+		Retryable:        probe.Retryable,
+		DocumentationURL: docURL,
+	}
+
+	return fmt.Errorf("%w: %w", batchAPIErrorSentinel(apiErr), apiErr)
+}
+
+// batchAPIErrorSentinel picks the sentinel matching
+// createErrorFromResult's resource mapping, with HTTP-status fallbacks
+// for code-less bodies.
+func batchAPIErrorSentinel(apiErr *APIError) error {
+	if parts := strings.Split(apiErr.Code, "::"); len(parts) > 1 {
+		switch parts[1] {
+		case "SCRAPE":
+			return ErrScrapeFailed
+		case "PROXY":
+			return ErrProxyFailed
+		case "ASP":
+			return ErrASPBypassFailed
+		case "SCHEDULE":
+			return ErrScheduleFailed
+		case "WEBHOOK":
+			return ErrWebhookFailed
+		case "SESSION":
+			return ErrSessionFailed
+		case "THROTTLE":
+			return ErrTooManyRequests
+		}
+	}
+
+	switch {
+	case apiErr.HTTPStatusCode == http.StatusTooManyRequests:
+		return ErrTooManyRequests
+	case apiErr.HTTPStatusCode >= 500:
+		return ErrAPIServer
+	}
+
+	return ErrAPIClient
 }
 
 // batchUpstreamPrefix is the header prefix used by the server to
