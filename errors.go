@@ -20,6 +20,10 @@ var (
 	// ErrExtractionConfig indicates invalid extraction configuration.
 	ErrExtractionConfig = errors.New("invalid extraction config")
 
+	// ErrVNCNotConfigured indicates a Cloud Browser config that carries
+	// neither of the two fields the server salts the VNC credential from.
+	ErrVNCNotConfigured = errors.New("EnableVNC and VNCPassword must both be set on the config")
+
 	// ErrContentType indicates an invalid content type for the requested operation.
 	ErrContentType = errors.New("invalid content type for this operation")
 

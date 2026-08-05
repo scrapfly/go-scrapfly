@@ -122,6 +122,26 @@ func (c *Client) CloudBrowserProjectSalt() string {
 	return ProjectSalt(c.key)
 }
 
+// VNCClientPassword returns the password a native VNC client must type to
+// attach to a session created with this config: "<project_salt>-<VNCPassword>".
+//
+// Required by the VNC TCP endpoint (port 5901), which the server salts at
+// allocation. The WebSocket endpoint /run/<run_id>/vnc takes the raw
+// VNCPassword instead. Returns ErrVNCNotConfigured when the config carries
+// no VNC credential to salt.
+func (cfg *CloudBrowserConfig) VNCClientPassword(apiKey string) (string, error) {
+	if cfg == nil || !cfg.EnableVNC || cfg.VNCPassword == "" {
+		return "", ErrVNCNotConfigured
+	}
+	return ProjectSalt(apiKey) + "-" + cfg.VNCPassword, nil
+}
+
+// CloudBrowserVNCPassword returns the password a native VNC client must type
+// to attach to a session created with config, using this client's api key.
+func (c *Client) CloudBrowserVNCPassword(config *CloudBrowserConfig) (string, error) {
+	return config.VNCClientPassword(c.key)
+}
+
 // CloudBrowser returns the Cloud Browser WebSocket connection URL.
 //
 // On rejection the server sends a JSON error frame then a close frame
