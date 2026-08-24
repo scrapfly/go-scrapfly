@@ -32,14 +32,18 @@ func main() {
 	fmt.Printf("  WS URL:  %s\n", result.WSURL)
 
 	// Step 2: Connect with a CDP client (chromedp, rod, or playwright-go).
-	// Example with chromedp:
+	// chromedp needs NoModifyURL — ws_url is already the CDP endpoint, and the
+	// default allocator tries to rediscover one over HTTP and fails on the
+	// missing port:
 	//
-	//   allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, result.WSURL)
+	//   allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, result.WSURL, chromedp.NoModifyURL)
 	//   defer cancel()
 	//   taskCtx, cancel := chromedp.NewContext(allocCtx)
 	//   defer cancel()
 	//   var title string
-	//   chromedp.Run(taskCtx, chromedp.Title(&title))
+	//   chromedp.Run(taskCtx,
+	//       chromedp.Navigate("https://web-scraping.dev/products"),
+	//       chromedp.Title(&title))
 	//   fmt.Println("Page title:", title)
 
 	fmt.Println("\nConnect to the browser using the WS URL above with chromedp, rod, or playwright-go")

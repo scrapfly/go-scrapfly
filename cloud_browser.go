@@ -22,9 +22,10 @@ const (
 
 // CloudBrowserConfig configures a Cloud Browser session.
 type CloudBrowserConfig struct {
-	ProxyPool    string   `json:"proxy_pool,omitempty"`
-	OS           string   `json:"os,omitempty"`
-	Country      string   `json:"country,omitempty"`
+	ProxyPool string `json:"proxy_pool,omitempty"`
+	// OS is the fingerprint operating system: linux, windows, macos, android, iphone, ipad.
+	OS      string `json:"os,omitempty"`
+	Country string `json:"country,omitempty"`
 	// Lang is the browser UI language — the singular navigator.language base
 	// tag (e.g. "en"). Empty means the server derives it from Country.
 	Lang string `json:"lang,omitempty"`
@@ -172,6 +173,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		if len(config.Languages) > 0 {
 			params.Set("languages", strings.Join(config.Languages, ","))
 		}
+		if len(config.Extensions) > 0 {
+			params.Set("extensions", strings.Join(config.Extensions, ","))
+		}
 		if config.Session != "" {
 			params.Set("session", config.Session)
 		}
@@ -275,7 +279,7 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 type UnblockConfig struct {
 	URL            string `json:"url"`
 	Country        string `json:"country,omitempty"`
-	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos
+	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos, android, iphone, ipad
 	BrowserBrand   string `json:"browser_brand,omitempty"`   // Fingerprint browser brand: chrome, edge, brave, opera
 	Session        string `json:"session,omitempty"`         // Named session for reconnection — reuses an existing ASP session and disables auto-close
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
