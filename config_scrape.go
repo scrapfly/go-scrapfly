@@ -106,7 +106,7 @@ type ScrapeConfig struct {
 	JS string
 	// JSScenario is a sequence of browser actions to perform (requires RenderJS).
 	JSScenario []js_scenario.JSScenarioStep
-	// OS spoofs the operating system in the User-Agent.
+	// OS spoofs the operating system in the User-Agent: win11, mac, linux, chromeos, android, iphone, ipad.
 	OS string
 	// Lang sets the Accept-Language header values.
 	Lang []string

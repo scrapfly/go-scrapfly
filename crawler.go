@@ -443,7 +443,7 @@ func (c *Client) CrawlContentsBatch(uuid string, urls []string, formats []Crawle
 
 // CrawlCancel cancels a running crawler job.
 //
-// `POST /crawl/{uuid}/cancel` — proxied through to the scrape-engine's
+// `POST /crawl/{uuid}/cancel` — proxied through to the crawler backend's
 // internal cancel endpoint after the API verifies job ownership. Calling
 // cancel on a job that has already finished (DONE/CANCELLED) is a no-op.
 //

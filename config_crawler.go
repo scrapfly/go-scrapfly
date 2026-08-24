@@ -43,9 +43,8 @@ func (f CrawlerContentFormat) String() string { return string(f) }
 
 // CrawlerWebhookEvent enumerates the webhook events the crawler can emit.
 //
-// Source of truth: apps/scrapfly/scrape-engine/scrape_engine/crawler/webhook_manager.py
-// (verified against the public docs and the example payloads shipped in
-// apps/scrapfly/web-app/src/Template/Docs/crawler-api/webhooks_example/).
+// Event names match the wire format documented in the Crawler API webhook
+// reference, and are verified against its example payloads.
 type CrawlerWebhookEvent string
 
 // Crawler webhook event names.
@@ -109,18 +108,18 @@ type CrawlerConfig struct {
 	AllowedExternalDomains    []string
 
 	// Tri-state. nil = unset (server default True); non-nil = explicit override.
-	FollowInternalSubdomains *bool
+	FollowInternalSubdomains  *bool
 	AllowedInternalSubdomains []string
 
 	// Request configuration.
-	Headers         map[string]string
-	Delay           int // ms, 0-15000
-	UserAgent       string
-	MaxConcurrency  int
-	RenderingDelay  int // ms, 0-25000
+	Headers        map[string]string
+	Delay          int // ms, 0-15000
+	UserAgent      string
+	MaxConcurrency int
+	RenderingDelay int // ms, 0-25000
 
 	// Crawl strategy.
-	UseSitemaps   bool
+	UseSitemaps    bool
 	IgnoreNoFollow bool
 
 	// Tri-state. nil = unset (server default True); non-nil = explicit override.
