@@ -85,13 +85,13 @@ func (s *CrawlerState) HasStopped() bool { return s.StopTime != nil }
 // or zero required field throws an error so API contract drift surfaces loud
 // rather than silently producing a zero-valued Status object.
 type CrawlerStatus struct {
-	CrawlerUUID string       `json:"crawler_uuid"`
-	Status      string       `json:"status"`
-	IsFinished  bool         `json:"is_finished"`
+	CrawlerUUID string `json:"crawler_uuid"`
+	Status      string `json:"status"`
+	IsFinished  bool   `json:"is_finished"`
 	// IsSuccess is nil while the crawler is still running, then bool once terminal.
 	// The server occasionally sends `false` during PENDING, so callers should use
 	// IsComplete() / IsFailed() rather than checking the field directly.
-	IsSuccess *bool         `json:"is_success"`
+	IsSuccess *bool        `json:"is_success"`
 	State     CrawlerState `json:"state"`
 }
 

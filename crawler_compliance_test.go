@@ -447,4 +447,3 @@ func TestComplianceDoesNotFollowExternalRedirect(t *testing.T) {
 	t.Logf("[observation] external redirect followed: %d",
 		hitCount(fetchReport(t), "external_redirect_followed"))
 }
-

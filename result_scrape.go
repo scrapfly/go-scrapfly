@@ -131,9 +131,9 @@ type ConfigData struct {
 	JS              *string             `json:"js"`
 	RenderingWait   int                 `json:"rendering_wait"`
 	WaitForSelector *string             `json:"wait_for_selector"`
-	Screenshots      map[string]string   `json:"screenshots"`
-	ScreenshotFlags  []string            `json:"screenshot_flags"`
-	WebhookName      *string             `json:"webhook_name"`
+	Screenshots     map[string]string   `json:"screenshots"`
+	ScreenshotFlags []string            `json:"screenshot_flags"`
+	WebhookName     *string             `json:"webhook_name"`
 	Timeout         int                 `json:"timeout"`
 	JSScenario      interface{}         `json:"js_scenario"`
 	Extract         interface{}         `json:"extract"`
