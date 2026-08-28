@@ -48,6 +48,23 @@ type CloudBrowserConfig struct {
 	Extensions   []string `json:"extensions,omitempty"`
 	BrowserBrand string   `json:"browser_brand,omitempty"`
 
+	// TargetURL is the URL this session will scrape. It is not navigated to —
+	// the browser still goes wherever you drive it over CDP — but declaring it
+	// lets Scrapfly pick the proxy and fingerprint for that site before the
+	// browser starts.
+	//
+	// Strongly recommended. A proxy network is chosen once per session, and some
+	// upstream providers refuse whole categories of destination (government
+	// portals, for example). Without TargetURL that choice is made blind, and a
+	// session routed to a provider that refuses the target fails at connection
+	// time: Chromium renders its own ERR_SOCKS_CONNECTION_FAILED page and no page
+	// data is returned.
+	//
+	// Must be an absolute URL including the scheme ("https://example.com"); a
+	// bare hostname is rejected server-side and silently leaves the session
+	// without a declared target.
+	TargetURL string `json:"target_url,omitempty"`
+
 	// BYOPProxy is a "Bring Your Own Proxy" URL that the Cloud Browser will use
 	// instead of Scrapfly's managed proxy pools.
 	//
@@ -208,6 +225,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 		if config.Resolution != "" {
 			params.Set("resolution", config.Resolution)
+		}
+		if config.TargetURL != "" {
+			params.Set("target_url", config.TargetURL)
 		}
 		if config.BrowserBrand != "" {
 			params.Set("browser_brand", config.BrowserBrand)
