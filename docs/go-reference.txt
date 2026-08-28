@@ -196,6 +196,10 @@ var (
 	// ErrExtractionConfig indicates invalid extraction configuration.
 	ErrExtractionConfig = errors.New("invalid extraction config")
 
+	// ErrVNCNotConfigured indicates a Cloud Browser config that carries
+	// neither of the two fields the server salts the VNC credential from.
+	ErrVNCNotConfigured = errors.New("EnableVNC and VNCPassword must both be set on the config")
+
 	// ErrContentType indicates an invalid content type for the requested operation.
 	ErrContentType = errors.New("invalid content type for this operation")
 
@@ -851,6 +855,10 @@ func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, erro
     CloudBrowserUnblock bypasses anti-bot protection and returns a WebSocket URL
     to a browser with cookies/state pre-loaded.
 
+func (c *Client) CloudBrowserVNCPassword(config *CloudBrowserConfig) (string, error)
+    CloudBrowserVNCPassword returns the password a native VNC client must type
+    to attach to a session created with config, using this client's api key.
+
 func (c *Client) CloudBrowserVaultCreate(name, description string) (map[string]interface{}, error)
     CloudBrowserVaultCreate creates a new credential vault.
 
@@ -956,7 +964,7 @@ func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*
 func (c *Client) CrawlCancel(uuid string) error
     CrawlCancel cancels a running crawler job.
 
-    `POST /crawl/{uuid}/cancel` — proxied through to the scrape-engine's
+    `POST /crawl/{uuid}/cancel` — proxied through to the crawler backend's
     internal cancel endpoint after the API verifies job ownership. Calling
     cancel on a job that has already finished (DONE/CANCELLED) is a no-op.
 
@@ -1328,9 +1336,18 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error)
         }
 
 type CloudBrowserConfig struct {
-	ProxyPool    string   `json:"proxy_pool,omitempty"`
-	OS           string   `json:"os,omitempty"`
-	Country      string   `json:"country,omitempty"`
+	ProxyPool string `json:"proxy_pool,omitempty"`
+	// OS is the fingerprint operating system: linux, windows, macos, android, iphone, ipad.
+	OS      string `json:"os,omitempty"`
+	Country string `json:"country,omitempty"`
+	// Lang is the browser UI language — the singular navigator.language base
+	// tag (e.g. "en"). Empty means the server derives it from Country.
+	Lang string `json:"lang,omitempty"`
+	// Languages is the ordered language preference list driving
+	// navigator.languages and the q-weighted Accept-Language header
+	// (e.g. []string{"fr-FR", "fr", "en-US"}). Sent comma-joined; capped
+	// server-side at 3 entries.
+	Languages    []string `json:"languages,omitempty"`
 	Session      string   `json:"session,omitempty"`
 	Timeout      int      `json:"timeout,omitempty"` // Session timeout in seconds (default 900)
 	BlockImages  bool     `json:"block_images,omitempty"`
@@ -1344,6 +1361,23 @@ type CloudBrowserConfig struct {
 	Resolution   string   `json:"resolution,omitempty"`
 	Extensions   []string `json:"extensions,omitempty"`
 	BrowserBrand string   `json:"browser_brand,omitempty"`
+
+	// TargetURL is the URL this session will scrape. It is not navigated to —
+	// the browser still goes wherever you drive it over CDP — but declaring it
+	// lets Scrapfly pick the proxy and fingerprint for that site before the
+	// browser starts.
+	//
+	// Strongly recommended. A proxy network is chosen once per session, and some
+	// upstream providers refuse whole categories of destination (government
+	// portals, for example). Without TargetURL that choice is made blind, and a
+	// session routed to a provider that refuses the target fails at connection
+	// time: Chromium renders its own ERR_SOCKS_CONNECTION_FAILED page and no page
+	// data is returned.
+	//
+	// Must be an absolute URL including the scheme ("https://example.com"); a
+	// bare hostname is rejected server-side and silently leaves the session
+	// without a declared target.
+	TargetURL string `json:"target_url,omitempty"`
 
 	// BYOPProxy is a "Bring Your Own Proxy" URL that the Cloud Browser will use
 	// instead of Scrapfly's managed proxy pools.
@@ -1407,6 +1441,16 @@ type CloudBrowserConfig struct {
 	HITLAllowedNetworks []string `json:"hitl_allowed_networks,omitempty"`
 }
     CloudBrowserConfig configures a Cloud Browser session.
+
+func (cfg *CloudBrowserConfig) VNCClientPassword(apiKey string) (string, error)
+    VNCClientPassword returns the password a native VNC client
+    must type to attach to a session created with this config:
+    "<project_salt>-<VNCPassword>".
+
+    Required by the VNC TCP endpoint (port 5901), which the server salts
+    at allocation. The WebSocket endpoint /run/<run_id>/vnc takes the raw
+    VNCPassword instead. Returns ErrVNCNotConfigured when the config carries no
+    VNC credential to salt.
 
 type CloudBrowserMonitoringOptions struct {
 	Period    MonitoringPeriod
@@ -2050,10 +2094,8 @@ type CrawlerWebhookCommon struct {
 type CrawlerWebhookEvent string
     CrawlerWebhookEvent enumerates the webhook events the crawler can emit.
 
-    Source of truth:
-    apps/scrapfly/scrape-engine/scrape_engine/crawler/webhook_manager.py
-    (verified against the public docs and the example payloads shipped in
-    apps/scrapfly/web-app/src/Template/Docs/crawler-api/webhooks_example/).
+    Event names match the wire format documented in the Crawler API webhook
+    reference, and are verified against its example payloads.
 
 const (
 	WebhookCrawlerStarted       CrawlerWebhookEvent = "crawler_started"
@@ -2705,7 +2747,7 @@ type ScrapeConfig struct {
 	JS string
 	// JSScenario is a sequence of browser actions to perform (requires RenderJS).
 	JSScenario []js_scenario.JSScenarioStep
-	// OS spoofs the operating system in the User-Agent.
+	// OS spoofs the operating system in the User-Agent: win11, mac, linux, chromeos, android, iphone, ipad.
 	OS string
 	// Lang sets the Accept-Language header values.
 	Lang []string
@@ -3073,7 +3115,7 @@ type URIContext struct {
 type UnblockConfig struct {
 	URL            string `json:"url"`
 	Country        string `json:"country,omitempty"`
-	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos
+	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos, android, iphone, ipad
 	BrowserBrand   string `json:"browser_brand,omitempty"`   // Fingerprint browser brand: chrome, edge, brave, opera
 	Session        string `json:"session,omitempty"`         // Named session for reconnection — reuses an existing ASP session and disables auto-close
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
