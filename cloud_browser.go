@@ -128,8 +128,9 @@ type CloudBrowserConfig struct {
 }
 
 // ProjectSalt returns the deterministic project salt for an api key
-// (sha256(apiKey)[:8]). Matches the X-Browser-Project-Salt response
-// header returned on a successful Cloud Browser WebSocket upgrade.
+// (sha256(apiKey)[:8]). The Cloud Browser service returns the same value as
+// the X-Browser-Project-Salt response header on VNC-enabled upgrades, where
+// the salt is also the VNC password prefix (<salt>-<password>).
 func ProjectSalt(apiKey string) string {
 	sum := sha256.Sum256([]byte(apiKey))
 	return hex.EncodeToString(sum[:])[:8]
