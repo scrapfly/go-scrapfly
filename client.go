@@ -709,7 +709,7 @@ func (c *Client) handleAPIErrorResponse(resp *http.Response, body []byte) error 
 	apiErr := &APIError{
 		Message:        msg,
 		HTTPStatusCode: statusCode,
-		Code:           errResp.Code,
+		Code:           errResp.errorCode(),
 	}
 
 	// Retry-After parsing (seconds or HTTP-date)

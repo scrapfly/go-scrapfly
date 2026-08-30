@@ -89,6 +89,18 @@ type errorResponse struct {
 	ErrorID  string `json:"error_id"`
 	HTTPCode int    `json:"http_code"`
 	Code     string `json:"code"`
+	// Alerting and schedule endpoints carry the ERR::* value under "error"
+	// rather than "code". Without this the code was dropped for those APIs and
+	// callers could not branch on it.
+	Error string `json:"error"`
+}
+
+// errorCode returns the ERR::* value from whichever envelope key carries it.
+func (e errorResponse) errorCode() string {
+	if e.Code != "" {
+		return e.Code
+	}
+	return e.Error
 }
 
 // --- Detailed Data Structures ---
