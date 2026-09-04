@@ -3,6 +3,7 @@ package scrapfly
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,7 +214,7 @@ func TestCrawlerConfig_InvalidWebhookEvent(t *testing.T) {
 	}
 }
 
-func TestCrawlerConfig_AllEightValidWebhookEvents(t *testing.T) {
+func TestCrawlerConfig_AllValidWebhookEvents(t *testing.T) {
 	config := &CrawlerConfig{
 		URL: "https://example.com",
 		WebhookEvents: []CrawlerWebhookEvent{
@@ -225,10 +226,112 @@ func TestCrawlerConfig_AllEightValidWebhookEvents(t *testing.T) {
 			WebhookCrawlerStopped,
 			WebhookCrawlerCancelled,
 			WebhookCrawlerFinished,
+			WebhookCrawlerSearchReady,
+			WebhookCrawlerSearchFailed,
+			WebhookCrawlerUpdated,
 		},
 	}
 	if _, err := config.toJSONBody(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCrawlerConfig_SearchSerializes(t *testing.T) {
+	body, err := (&CrawlerConfig{URL: "https://example.com", Search: true}).toJSONBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["search"] != true {
+		t.Errorf("search not on the wire: %v", decoded["search"])
+	}
+}
+
+func TestCrawlerConfig_SearchOmittedWhenOff(t *testing.T) {
+	// Unset means server default: never emit a field to send its default.
+	body, err := (&CrawlerConfig{URL: "https://example.com"}).toJSONBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := decoded["search"]; present {
+		t.Error("search must be absent when not requested")
+	}
+}
+
+func TestCrawlerWebhookEvent_SearchEventsAreValid(t *testing.T) {
+	for _, event := range []CrawlerWebhookEvent{WebhookCrawlerSearchReady, WebhookCrawlerSearchFailed} {
+		if !event.IsValid() {
+			t.Errorf("%q rejected by IsValid", event)
+		}
+		detected, err := DetectCrawlerWebhookEvent([]byte(`{"event": "` + string(event) + `", "payload": {}}`))
+		if err != nil {
+			t.Errorf("DetectCrawlerWebhookEvent(%q): %v", event, err)
+		}
+		if detected != event {
+			t.Errorf("detected %q, want %q", detected, event)
+		}
+	}
+}
+
+func TestCrawlerUpdatedWebhook_Decodes(t *testing.T) {
+	body := []byte(`{
+		"event": "crawler_updated",
+		"payload": {
+			"crawler_uuid": "b4867c50-318c-47cd-bfc9-bed67f24771a",
+			"project": "default",
+			"env": "LIVE",
+			"seed_url": "https://web-scraping.dev/products",
+			"action": "updated",
+			"state": {"urls_visited": 5},
+			"refresh": {
+				"at": "2026-09-03T04:12:46.912430Z",
+				"generation": 12,
+				"added": 1,
+				"updated": 2,
+				"removed": 1,
+				"unchanged": 2,
+				"failed": 0,
+				"duration_ms": 41870,
+				"search_status": "READY"
+			},
+			"documents": {
+				"updated": ["https://web-scraping.dev/product/25", "https://web-scraping.dev/products"],
+				"removed": ["https://web-scraping.dev/product/9"],
+				"truncated": true
+			},
+			"links": {"status": "https://api.scrapfly.io/crawl/b4867c50-318c-47cd-bfc9-bed67f24771a/status"}
+		}
+	}`)
+
+	var wh CrawlerUpdatedWebhook
+	if err := json.Unmarshal(body, &wh); err != nil {
+		t.Fatal(err)
+	}
+	if wh.Event != WebhookCrawlerUpdated {
+		t.Errorf("event %q, want %q", wh.Event, WebhookCrawlerUpdated)
+	}
+	if wh.Payload.CrawlerUUID != "b4867c50-318c-47cd-bfc9-bed67f24771a" {
+		t.Errorf("crawler_uuid %q", wh.Payload.CrawlerUUID)
+	}
+	if wh.Payload.Refresh.Generation != 12 || wh.Payload.Refresh.Changed() != 4 {
+		t.Errorf("refresh generation=%d changed=%d", wh.Payload.Refresh.Generation, wh.Payload.Refresh.Changed())
+	}
+	if len(wh.Payload.Documents.Updated) != 2 || len(wh.Payload.Documents.Removed) != 1 {
+		t.Errorf("documents updated=%d removed=%d", len(wh.Payload.Documents.Updated), len(wh.Payload.Documents.Removed))
+	}
+	// Truncated is the only signal that the counts outrun the lists.
+	if !wh.Payload.Documents.Truncated {
+		t.Error("truncated must survive the decode")
+	}
+	if wh.Payload.Links.Status == "" {
+		t.Error("links.status must survive the decode")
 	}
 }
 
@@ -1001,5 +1104,882 @@ func TestDetectCrawlerWebhookEvent_MissingEvent(t *testing.T) {
 	_, err := DetectCrawlerWebhookEvent(body)
 	if err == nil {
 		t.Fatal("expected error for missing event")
+	}
+}
+
+// ==============================================================================
+// Search / prompt
+// ==============================================================================
+
+const searchEnvelope = `{
+  "query": "TLS fingerprint",
+  "mode": "hybrid",
+  "limit": 20,
+  "completeness": "exact",
+  "crawls": [{"crawler_uuid": "0198aaaa", "documents": 412, "vectors": 18432, "index": "IVF_PQ"}],
+  "skipped": [{"crawler_uuid": "0198bbbb", "reason": "search_not_ready", "status": "BUILDING"}],
+  "results": [{
+    "rank": 1,
+    "score": 0.927,
+    "scores": {"vector": 0.91, "fts": 12.4, "rrf": 0.0312},
+    "crawler_uuid": "0198aaaa",
+    "url": "https://example.com/foo",
+    "title": "Foo Product",
+    "source_format": "markdown",
+    "content_type": "application/markdown",
+    "chunk_id": 3,
+    "text": "the matched chunk",
+    "warc_offset": 728271,
+    "warc_end": 746643,
+    "contents_url": "https://api.scrapfly.io/crawl/0198aaaa/contents?url=x"
+  }],
+  "stats": {"duration_ms": 412, "crawls_searched": 1, "candidates": 150, "gcs_gets": 27},
+  "crawls_requested": 2,
+  "crawls_searched": 1,
+  "crawls_pruned_exact": 0,
+  "crawls_skipped_deadline": ["0198cccc"],
+  "crawls_failed": [{"crawler_uuid": "0198dddd", "reason": "search_failed", "status": "FAILED"}],
+  "theta": 0.42,
+  "max_ub_unsearched": 0.31,
+  "cursor": null
+}`
+
+func TestClient_CrawlsSearch_POSTsCollectionBody(t *testing.T) {
+	var got map[string]interface{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/crawl/search" {
+			t.Errorf("expected /crawl/search, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("key") != "__API_KEY__" {
+			t.Error("key missing in query")
+		}
+		bodyBytes, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(bodyBytes, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(searchEnvelope))
+	})
+
+	res, err := client.CrawlsSearch([]string{"0198aaaa", "0198bbbb"}, "TLS fingerprint", &CrawlSearchOptions{
+		Limit:   20,
+		Mode:    CrawlerSearchModeHybrid,
+		Filters: map[string]interface{}{"url_prefix": "https://example.com/docs/"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got["query"] != "TLS fingerprint" {
+		t.Errorf("query: %v", got["query"])
+	}
+	ids, _ := got["crawl_ids"].([]interface{})
+	if len(ids) != 2 || ids[0] != "0198aaaa" || ids[1] != "0198bbbb" {
+		t.Errorf("crawl_ids: %v", got["crawl_ids"])
+	}
+	if got["limit"] != float64(20) {
+		t.Errorf("limit: %v", got["limit"])
+	}
+	if got["mode"] != "hybrid" {
+		t.Errorf("mode: %v", got["mode"])
+	}
+	filters, _ := got["filters"].(map[string]interface{})
+	if filters["url_prefix"] != "https://example.com/docs/" {
+		t.Errorf("filters: %v", got["filters"])
+	}
+
+	if !res.IsExact() {
+		t.Errorf("completeness: %s", res.Completeness)
+	}
+	if len(res.Results) != 1 || res.Results[0].URL != "https://example.com/foo" {
+		t.Fatalf("results: %+v", res.Results)
+	}
+	if res.Results[0].Scores.RRF != 0.0312 {
+		t.Errorf("rrf: %v", res.Results[0].Scores.RRF)
+	}
+	if res.Results[0].Scores.Vector == nil || *res.Results[0].Scores.Vector != 0.91 {
+		t.Errorf("vector: %v", res.Results[0].Scores.Vector)
+	}
+	if res.Results[0].Scores.FTS == nil || *res.Results[0].Scores.FTS != 12.4 {
+		t.Errorf("fts: %v", res.Results[0].Scores.FTS)
+	}
+	if res.Results[0].WARCOffset == nil || *res.Results[0].WARCOffset != 728271 {
+		t.Errorf("warc_offset: %v", res.Results[0].WARCOffset)
+	}
+	if res.Results[0].WARCEnd == nil || *res.Results[0].WARCEnd != 746643 {
+		t.Errorf("warc_end: %v", res.Results[0].WARCEnd)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != CrawlerSkipSearchNotReady {
+		t.Errorf("skipped: %+v", res.Skipped)
+	}
+	if res.Crawls[0].Vectors != 18432 {
+		t.Errorf("crawls: %+v", res.Crawls)
+	}
+	// The deadline and failure envelopes name their crawls, so a caller can
+	// retry exactly those. Counting them would say how many without saying
+	// which.
+	if len(res.CrawlsSkippedDeadline) != 1 || res.CrawlsSkippedDeadline[0] != "0198cccc" {
+		t.Errorf("crawls_skipped_deadline: %+v", res.CrawlsSkippedDeadline)
+	}
+	if len(res.CrawlsFailed) != 1 || res.CrawlsFailed[0].CrawlerUUID != "0198dddd" ||
+		res.CrawlsFailed[0].Reason != CrawlerSkipSearchFailed {
+		t.Errorf("crawls_failed: %+v", res.CrawlsFailed)
+	}
+	if res.Theta == nil || *res.Theta != 0.42 {
+		t.Errorf("theta: %v", res.Theta)
+	}
+	if res.MaxUBUnsearched == nil || *res.MaxUBUnsearched != 0.31 {
+		t.Errorf("max_ub_unsearched: %v", res.MaxUBUnsearched)
+	}
+	if res.Cursor != "" {
+		t.Errorf("cursor: %q", res.Cursor)
+	}
+}
+
+func TestParseCrawlerSearch_EmptyFanOutEnvelope(t *testing.T) {
+	// A search that opened no crawl still answers 200 with the whole envelope:
+	// the two skip lists come back as empty arrays and the two bounds as null,
+	// because no crawl was opened to compute one. This is what the API returns
+	// for a single crawl whose index is DISABLED, so it is the shape every
+	// caller meets first.
+	body := []byte(`{
+	  "query": "product price", "mode": "hybrid", "limit": 10, "completeness": "exact",
+	  "crawls": [], "results": [],
+	  "skipped": [{"crawler_uuid": "0198aaaa", "reason": "search_disabled", "status": "DISABLED"}],
+	  "stats": {"duration_ms": 7, "crawls_searched": 0, "candidates": 0, "gcs_gets": 0},
+	  "crawls_requested": 1, "crawls_searched": 0, "crawls_pruned_exact": 0,
+	  "crawls_skipped_deadline": [], "crawls_failed": [],
+	  "theta": null, "max_ub_unsearched": null, "cursor": null
+	}`)
+	res, err := parseCrawlerSearch(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.CrawlsSkippedDeadline) != 0 || len(res.CrawlsFailed) != 0 {
+		t.Errorf("empty fan-out reported skips: %+v %+v", res.CrawlsSkippedDeadline, res.CrawlsFailed)
+	}
+	// nil says no bound was computed. 0 would claim the best unsearched score
+	// was zero, which is a different and much stronger statement.
+	if res.Theta != nil || res.MaxUBUnsearched != nil {
+		t.Errorf("bounds invented for an unopened fan-out: theta=%v max_ub=%v", res.Theta, res.MaxUBUnsearched)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0].Reason != CrawlerSkipSearchDisabled {
+		t.Errorf("skipped: %+v", res.Skipped)
+	}
+}
+
+func TestParseCrawlerSearch_SingleLegHitKeepsNullsDistinct(t *testing.T) {
+	// A hybrid search fuses two legs, and a candidate only one leg retrieved
+	// carries null for the other. The chunk here also has no WARC byte range,
+	// which is what the engine sends for a document it indexed without writing
+	// to the artifact. Every one of those nulls has a plausible zero, so a
+	// non-pointer model turns "never scored" into "scored 0" and "no range"
+	// into a range read at offset 0.
+	body := []byte(`{
+	  "query": "product price", "mode": "hybrid", "limit": 10, "completeness": "exact",
+	  "crawls": [{"crawler_uuid": "0198aaaa", "documents": 4, "vectors": 12, "index": ""}],
+	  "skipped": [],
+	  "results": [{
+	    "rank": 1, "score": 0.03,
+	    "scores": {"vector": 0.91, "fts": null, "rrf": 0.03},
+	    "crawler_uuid": "0198aaaa", "url": "https://example.com/foo", "title": "Foo",
+	    "source_format": "markdown", "content_type": "application/markdown",
+	    "chunk_id": 0, "text": "the matched chunk",
+	    "warc_offset": null, "warc_end": null,
+	    "contents_url": "https://api.scrapfly.io/crawl/0198aaaa/contents?url=x"
+	  }],
+	  "stats": {"duration_ms": 9, "crawls_searched": 1, "candidates": 1, "gcs_gets": 1},
+	  "crawls_requested": 1, "crawls_searched": 1, "crawls_pruned_exact": 0,
+	  "crawls_skipped_deadline": [], "crawls_failed": [],
+	  "theta": 0.03, "max_ub_unsearched": null, "cursor": null
+	}`)
+	res, err := parseCrawlerSearch(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Results) != 1 {
+		t.Fatalf("results: %+v", res.Results)
+	}
+	hit := res.Results[0]
+	if hit.Scores.Vector == nil || *hit.Scores.Vector != 0.91 {
+		t.Errorf("the leg that did score the chunk lost its score: %v", hit.Scores.Vector)
+	}
+	if hit.Scores.FTS != nil {
+		t.Errorf("the leg that never saw the chunk reports a score of %v", *hit.Scores.FTS)
+	}
+	if hit.WARCOffset != nil || hit.WARCEnd != nil {
+		t.Errorf("a chunk with no byte range decoded one: offset=%v end=%v", hit.WARCOffset, hit.WARCEnd)
+	}
+}
+
+func TestClient_CrawlSearch_IsAOneElementCollectionCall(t *testing.T) {
+	// The collection endpoint is the real API; the single-crawl call must not
+	// grow a path of its own or the two can answer differently.
+	var got map[string]interface{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/crawl/search" {
+			t.Errorf("expected /crawl/search, got %s", r.URL.Path)
+		}
+		bodyBytes, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(bodyBytes, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(searchEnvelope))
+	})
+
+	if _, err := client.CrawlSearch("0198aaaa", "TLS fingerprint", nil); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := got["crawl_ids"].([]interface{})
+	if len(ids) != 1 || ids[0] != "0198aaaa" {
+		t.Errorf("crawl_ids: %v", got["crawl_ids"])
+	}
+}
+
+func TestClient_CrawlsSearch_RejectsBadInputBeforeRequest(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no request should be issued")
+	})
+
+	if _, err := client.CrawlsSearch(nil, "q", nil); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("empty crawl_ids: %v", err)
+	}
+	if _, err := client.CrawlsSearch([]string{"a", "a"}, "q", nil); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("duplicate crawl_ids: %v", err)
+	}
+	if _, err := client.CrawlsSearch([]string{"a"}, "", nil); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("empty query: %v", err)
+	}
+	if _, err := client.CrawlsSearch([]string{"a"}, "q", &CrawlSearchOptions{Mode: "semantic"}); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("invalid mode: %v", err)
+	}
+}
+
+func TestClient_CrawlsSearch_ErrorEnvelopeWraps(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code": "ERR::CRAWLER::SEARCH_NOT_ENABLED", "message": "Search is not enabled"}`))
+	})
+	_, err := client.CrawlsSearch([]string{"0198aaaa"}, "q", nil)
+	if !errors.Is(err, ErrCrawlerFailed) {
+		t.Fatalf("expected ErrCrawlerFailed, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "SEARCH_NOT_ENABLED") {
+		t.Errorf("error lost the code: %v", err)
+	}
+}
+
+func TestClient_CrawlsPrompt_StreamsFrames(t *testing.T) {
+	var got map[string]interface{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/crawl/prompt" {
+			t.Errorf("expected /crawl/prompt, got %s", r.URL.Path)
+		}
+		if r.Header.Get("Accept") != "text/event-stream" {
+			t.Errorf("Accept: %s", r.Header.Get("Accept"))
+		}
+		bodyBytes, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(bodyBytes, &got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: source\ndata: {\"id\":1,\"crawler_uuid\":\"0198aaaa\",\"url\":\"https://example.com/foo\",\"score\":0.92}\n\n" +
+			":keepalive\n\n" +
+			"event: token\ndata: \"The\"\n\n" +
+			"event: token\ndata: \" answer\"\n\n" +
+			"event: done\ndata: {\"sources_used\":[1],\"sources_dropped\":2,\"truncated\":false," +
+			"\"usage\":{\"prompt_token_count\":30,\"candidates_token_count\":9,\"thoughts_token_count\":3," +
+			"\"total_token_count\":42,\"cost\":{\"input\":0.000012,\"output\":0.000048}," +
+			"\"model\":\"gemini-2.5-flash\"}}\n\n"))
+	})
+
+	var (
+		answer  strings.Builder
+		sources []CrawlerPromptSource
+		done    CrawlerPromptDone
+	)
+	err := client.CrawlsPrompt([]string{"0198aaaa", "0198bbbb"}, "Compare the pricing models.",
+		&CrawlPromptOptions{
+			Search: &CrawlSearchOptions{Limit: 30, Mode: CrawlerSearchModeHybrid},
+			Model:  "gemini-2.5-flash-lite",
+		},
+		func(ev CrawlerPromptEvent) error {
+			switch ev.Type {
+			case CrawlerPromptEventToken:
+				answer.WriteString(ev.Token)
+			case CrawlerPromptEventSource:
+				sources = append(sources, ev.Source)
+			case CrawlerPromptEventDone:
+				done = ev.Done
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	generation, _ := got["generation"].(map[string]interface{})
+	if generation["stream"] != true || generation["model"] != "gemini-2.5-flash-lite" {
+		t.Errorf("generation: %v", got["generation"])
+	}
+	search, _ := got["search"].(map[string]interface{})
+	if search["limit"] != float64(30) || search["mode"] != "hybrid" {
+		t.Errorf("search: %v", got["search"])
+	}
+
+	if answer.String() != "The answer" {
+		t.Errorf("answer: %q", answer.String())
+	}
+	if len(sources) != 1 || sources[0].URL != "https://example.com/foo" {
+		t.Errorf("sources: %+v", sources)
+	}
+	if len(done.SourcesUsed) != 1 || done.SourcesUsed[0] != 1 {
+		t.Errorf("sources_used: %+v", done.SourcesUsed)
+	}
+	// The done frame reports the flat price and nothing about how the answer
+	// was produced. The fixture above still sends usage, tokens, cost and the
+	// model precisely because an older API will: decoding into a struct that
+	// has no such field is what drops them.
+	if strings.Contains(fmt.Sprintf("%+v", done), "gemini") {
+		t.Errorf("done frame leaks the model: %+v", done)
+	}
+	// Dropped sources were retrieved and ranked but never shown to the model.
+	if done.SourcesDropped != 2 {
+		t.Errorf("sources_dropped: %d", done.SourcesDropped)
+	}
+}
+
+func TestClient_CrawlsPrompt_ErrorFrameFailsMidStream(t *testing.T) {
+	// Generation can fail after tokens were already handed to the caller.
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: token\ndata: \"partial\"\n\n" +
+			"event: error\ndata: {\"code\":\"ERR::CRAWLER::PROMPT_GENERATION_FAILED\",\"message\":\"upstream refused\"}\n\n"))
+	})
+
+	var tokens []string
+	err := client.CrawlsPrompt([]string{"0198aaaa"}, "hi", nil, func(ev CrawlerPromptEvent) error {
+		if ev.Type == CrawlerPromptEventToken {
+			tokens = append(tokens, ev.Token)
+		}
+		return nil
+	})
+	if !errors.Is(err, ErrCrawlerFailed) {
+		t.Fatalf("expected ErrCrawlerFailed, got %v", err)
+	}
+	if len(tokens) != 1 || tokens[0] != "partial" {
+		t.Errorf("tokens delivered before the failure: %+v", tokens)
+	}
+}
+
+func TestClient_CrawlsPrompt_HandlerErrorStopsStream(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: token\ndata: \"a\"\n\nevent: token\ndata: \"b\"\n\n"))
+	})
+
+	stop := errors.New("enough")
+	count := 0
+	err := client.CrawlsPrompt([]string{"0198aaaa"}, "hi", nil, func(ev CrawlerPromptEvent) error {
+		count++
+		return stop
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("expected the handler's error, got %v", err)
+	}
+	if count != 1 {
+		t.Errorf("handler called %d times after asking to stop", count)
+	}
+}
+
+func TestCrawl_SearchAndPrompt_DelegateToClient(t *testing.T) {
+	paths := map[string]bool{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		paths[r.URL.Path] = true
+		switch r.URL.Path {
+		case "/crawl":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"crawler_uuid": "abc", "status": "PENDING"}`))
+		case "/crawl/search":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(searchEnvelope))
+		case "/crawl/prompt":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("event: done\ndata: {\"truncated\":false}\n\n"))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	})
+
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Search: true})
+	if err := crawl.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := crawl.Search("q", nil); err != nil {
+		t.Errorf("Search: %v", err)
+	}
+	if err := crawl.Prompt("q", nil, func(CrawlerPromptEvent) error { return nil }); err != nil {
+		t.Errorf("Prompt: %v", err)
+	}
+	if !paths["/crawl/search"] || !paths["/crawl/prompt"] {
+		t.Errorf("endpoints not reached: %v", paths)
+	}
+}
+
+func TestCrawl_SearchAndPrompt_NotStartedReturnError(t *testing.T) {
+	client, _ := New("__API_KEY__")
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Search: true})
+
+	if _, err := crawl.Search("q", nil); !errors.Is(err, ErrCrawlerNotStarted) {
+		t.Errorf("Search: %v", err)
+	}
+	if err := crawl.Prompt("q", nil, func(CrawlerPromptEvent) error { return nil }); !errors.Is(err, ErrCrawlerNotStarted) {
+		t.Errorf("Prompt: %v", err)
+	}
+}
+
+func TestParseCrawlerStatus_SearchBlock(t *testing.T) {
+	body := []byte(`{
+	  "crawler_uuid": "abc", "status": "DONE", "is_finished": true, "is_success": true,
+	  "state": {"urls_visited": 1, "urls_extracted": 1, "urls_failed": 0, "urls_skipped": 0,
+	            "urls_to_crawl": 0, "api_credit_used": 1, "duration": 1},
+	  "search": {"status": "READY", "documents": 412, "vectors": 18432, "index": "IVF_PQ", "generation": 1}
+	}`)
+	status, err := parseCrawlerStatus(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Search.IsSearchable() {
+		t.Fatalf("search: %+v", status.Search)
+	}
+	if status.Search.Vectors != 18432 || status.Search.Generation != 1 {
+		t.Errorf("search: %+v", status.Search)
+	}
+}
+
+func TestParseCrawlerStatus_SearchBlockCarriesTheWriterBacklog(t *testing.T) {
+	// queue_depth and fragments ride every status poll. They are what tells a
+	// caller watching a BUILDING index that the writer is still draining
+	// rather than stalled, so a model that omits them reports both as 0 and
+	// the two conditions become indistinguishable.
+	body := []byte(`{
+	  "crawler_uuid": "abc", "status": "RUNNING", "is_finished": false, "is_success": null,
+	  "state": {"urls_visited": 12, "urls_extracted": 40, "urls_failed": 0, "urls_skipped": 0,
+	            "urls_to_crawl": 28, "api_credit_used": 12, "duration": 30},
+	  "search": {"status": "BUILDING", "documents": 12, "vectors": 240, "dropped": 1,
+	             "fragments": 3, "queue_depth": 17, "embedding_model": "gemini-embedding-001",
+	             "embedding_dimension": 768,
+	             "manifest": "uid/default/test/crawler/abc/search/manifest.json"}
+	}`)
+	status, err := parseCrawlerStatus(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Search.QueueDepth != 17 || status.Search.Fragments != 3 {
+		t.Errorf("search backlog: %+v", status.Search)
+	}
+	// Which model we embed with is not the customer's business.
+	if strings.Contains(fmt.Sprintf("%+v", status.Search), "gemini") {
+		t.Errorf("status leaks the embedding model: %+v", status.Search)
+	}
+	if status.Search.Manifest == "" {
+		t.Errorf("manifest: %+v", status.Search)
+	}
+	if status.Search.IsSearchable() {
+		t.Error("a BUILDING index must not read as searchable")
+	}
+}
+
+func TestParseCrawlerStatus_SearchAbsentOnCrawlWithoutIt(t *testing.T) {
+	body := []byte(`{
+	  "crawler_uuid": "abc", "status": "DONE", "is_finished": true, "is_success": true,
+	  "state": {"urls_visited": 1, "urls_extracted": 1, "urls_failed": 0, "urls_skipped": 0,
+	            "urls_to_crawl": 0, "api_credit_used": 1, "duration": 1}
+	}`)
+	status, err := parseCrawlerStatus(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Search != nil {
+		t.Errorf("expected nil search block, got %+v", status.Search)
+	}
+	if status.Search.IsSearchable() {
+		t.Error("a nil search block must not read as searchable")
+	}
+}
+
+func TestClient_PromptHTTPClient_OutlivesTheServerBudget(t *testing.T) {
+	// The API allows retrieval plus up to 150s of generation under a 165s
+	// ceiling, and http.Client.Timeout covers the body, so the SDK default
+	// would cut a legitimate stream mid-answer.
+	client, err := New("test-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := client.promptHTTPClient().Timeout; got != crawlPromptStreamTimeout {
+		t.Errorf("prompt timeout = %s, want %s", got, crawlPromptStreamTimeout)
+	}
+	if client.httpClient.Timeout != 150*time.Second {
+		t.Errorf("the shared client was mutated: %s", client.httpClient.Timeout)
+	}
+
+	// A caller who configured their own longer deadline keeps it.
+	transport := &http.Transport{}
+	client.SetHTTPClient(&http.Client{Timeout: 10 * time.Minute, Transport: transport})
+	streaming := client.promptHTTPClient()
+	if streaming.Timeout != 10*time.Minute {
+		t.Errorf("caller timeout overridden: %s", streaming.Timeout)
+	}
+
+	// No timeout at all means the caller opted out; do not impose one.
+	client.SetHTTPClient(&http.Client{Transport: transport})
+	if got := client.promptHTTPClient().Timeout; got != 0 {
+		t.Errorf("imposed a timeout on an unbounded client: %s", got)
+	}
+
+	// The shallow copy keeps the injected Transport, so the connection pool
+	// and any logging RoundTripper survive.
+	client.SetHTTPClient(&http.Client{Timeout: time.Second, Transport: transport})
+	if client.promptHTTPClient().Transport != transport {
+		t.Error("streaming copy dropped the injected Transport")
+	}
+}
+
+// ==============================================================================
+// Auto-refresh
+// ==============================================================================
+
+const refreshEnvelope = `{
+  "enabled": true,
+  "interval_seconds": 86400,
+  "status": "SCHEDULED",
+  "generation": 2,
+  "last_run_at": "2026-09-01T04:00:00Z",
+  "next_run_at": "2026-09-02T04:00:00Z",
+  "history": [
+    {"at": "2026-08-31T04:00:00Z", "generation": 1, "added": 0, "updated": 0, "removed": 0,
+     "unchanged": 412, "failed": 0, "duration_ms": 41200, "search_status": "READY"},
+    {"at": "2026-09-01T04:00:00Z", "generation": 2, "added": 3, "updated": 7, "removed": 1,
+     "unchanged": 404, "failed": 0, "duration_ms": 44900, "search_status": "READY",
+     "sample_updated": ["https://example.com/pricing"],
+     "sample_removed": ["https://example.com/old"]}
+  ]
+}`
+
+func TestCrawlerConfig_RefreshSerializes(t *testing.T) {
+	body, err := (&CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: 86400}).toJSONBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["refresh"] != true {
+		t.Errorf("refresh not on the wire: %v", decoded["refresh"])
+	}
+	if decoded["refresh_interval"] != float64(86400) {
+		t.Errorf("refresh_interval not on the wire: %v", decoded["refresh_interval"])
+	}
+}
+
+func TestCrawlerConfig_RefreshOmittedWhenOff(t *testing.T) {
+	// Unset means server default: never emit a field to send its default.
+	body, err := (&CrawlerConfig{URL: "https://example.com"}).toJSONBody()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := decoded["refresh"]; present {
+		t.Error("refresh must be absent when not requested")
+	}
+	if _, present := decoded["refresh_interval"]; present {
+		t.Error("refresh_interval must be absent when not requested")
+	}
+}
+
+func TestCrawlerConfig_RefreshIntervalBounds(t *testing.T) {
+	for _, interval := range []int{1, CrawlerRefreshMinInterval - 1, CrawlerRefreshMaxInterval + 1} {
+		config := &CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: interval}
+		if _, err := config.toJSONBody(); !errors.Is(err, ErrCrawlerConfig) {
+			t.Errorf("interval %d accepted: %v", interval, err)
+		}
+	}
+	for _, interval := range []int{CrawlerRefreshMinInterval, 86400, CrawlerRefreshMaxInterval} {
+		config := &CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: interval}
+		if _, err := config.toJSONBody(); err != nil {
+			t.Errorf("interval %d rejected: %v", interval, err)
+		}
+	}
+	// A period with the feature off would silently never run.
+	orphan := &CrawlerConfig{URL: "https://example.com", RefreshInterval: 86400}
+	if _, err := orphan.toJSONBody(); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("interval without Refresh accepted: %v", err)
+	}
+}
+
+func TestClient_CrawlRefreshNow_POSTsToTheCrawl(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/crawl/0198aaaa/refresh" {
+			t.Errorf("expected /crawl/0198aaaa/refresh, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("key") != "__API_KEY__" {
+			t.Error("key missing in query")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(refreshEnvelope))
+	})
+
+	state, err := client.CrawlRefreshNow("0198aaaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.Enabled || state.Status != CrawlerRefreshScheduled || state.Generation != 2 {
+		t.Fatalf("state: %+v", state)
+	}
+	if state.NextRunAt != "2026-09-02T04:00:00Z" {
+		t.Errorf("next_run_at: %q", state.NextRunAt)
+	}
+	last := state.LastRun()
+	if last == nil || last.Updated != 7 || last.Changed() != 11 {
+		t.Fatalf("last run: %+v", last)
+	}
+	if len(last.SampleRemoved) != 1 || last.SampleRemoved[0] != "https://example.com/old" {
+		t.Errorf("sample_removed: %v", last.SampleRemoved)
+	}
+}
+
+func TestClient_CrawlRefreshSettings_PATCHesOnlyWhatIsSet(t *testing.T) {
+	var got map[string]interface{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("expected PATCH, got %s", r.Method)
+		}
+		if r.URL.Path != "/crawl/0198aaaa/refresh" {
+			t.Errorf("expected /crawl/0198aaaa/refresh, got %s", r.URL.Path)
+		}
+		bodyBytes, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(bodyBytes, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(refreshEnvelope))
+	})
+
+	interval := 86400
+	if _, err := client.CrawlRefreshSettings("0198aaaa", CrawlRefreshSettings{
+		Enabled:         BoolPtr(true),
+		IntervalSeconds: &interval,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got["refresh"] != true || got["refresh_interval"] != float64(86400) {
+		t.Errorf("body: %v", got)
+	}
+
+	// Turning refresh off must not send an interval, or it would overwrite the
+	// period the crawl keeps for when it is turned back on.
+	got = nil
+	if _, err := client.CrawlRefreshSettings("0198aaaa", CrawlRefreshSettings{
+		Enabled: BoolPtr(false),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got["refresh"] != false {
+		t.Errorf("body: %v", got)
+	}
+	if _, present := got["refresh_interval"]; present {
+		t.Errorf("interval leaked into an enable-only patch: %v", got)
+	}
+}
+
+func TestClient_CrawlRefresh_RejectsBadInputBeforeRequest(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no request should be issued")
+	})
+
+	if _, err := client.CrawlRefreshNow(""); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("empty uuid: %v", err)
+	}
+	if _, err := client.CrawlRefreshSettings("a", CrawlRefreshSettings{}); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("empty patch: %v", err)
+	}
+	tooShort := 60
+	if _, err := client.CrawlRefreshSettings("a", CrawlRefreshSettings{IntervalSeconds: &tooShort}); !errors.Is(err, ErrCrawlerConfig) {
+		t.Errorf("out-of-bounds interval: %v", err)
+	}
+}
+
+func TestClient_CrawlRefreshHistory_ReturnsTheTimelineNewestLast(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/crawl/0198aaaa/refresh/history" {
+			t.Errorf("expected /crawl/0198aaaa/refresh/history, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "5" {
+			t.Errorf("limit: %q", r.URL.Query().Get("limit"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(refreshEnvelope))
+	})
+
+	history, err := client.CrawlRefreshHistory("0198aaaa", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].Generation != 1 || history[1].Generation != 2 {
+		t.Fatalf("history: %+v", history)
+	}
+	if history[0].Changed() != 0 || history[0].Unchanged != 412 {
+		t.Errorf("a run where nothing changed: %+v", history[0])
+	}
+}
+
+func TestClient_CrawlRefresh_ErrorEnvelopeWraps(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code": "ERR::CRAWLER::REFRESH_IN_PROGRESS", "message": "A refresh is already running"}`))
+	})
+	_, err := client.CrawlRefreshNow("0198aaaa")
+	if !errors.Is(err, ErrCrawlerFailed) {
+		t.Fatalf("expected ErrCrawlerFailed, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "REFRESH_IN_PROGRESS") {
+		t.Errorf("error lost the code: %v", err)
+	}
+}
+
+func TestCrawl_Refresh_DelegatesToClient(t *testing.T) {
+	paths := map[string]bool{}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		paths[r.URL.Path] = true
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/crawl":
+			_, _ = w.Write([]byte(`{"crawler_uuid": "abc", "status": "PENDING"}`))
+		case "/crawl/abc/refresh", "/crawl/abc/refresh/history":
+			_, _ = w.Write([]byte(refreshEnvelope))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	})
+
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Refresh: true})
+	if err := crawl.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := crawl.RefreshNow(); err != nil {
+		t.Errorf("RefreshNow: %v", err)
+	}
+	if _, err := crawl.RefreshSettings(CrawlRefreshSettings{Enabled: BoolPtr(true)}); err != nil {
+		t.Errorf("RefreshSettings: %v", err)
+	}
+	if _, err := crawl.RefreshHistory(0); err != nil {
+		t.Errorf("RefreshHistory: %v", err)
+	}
+	if !paths["/crawl/abc/refresh"] || !paths["/crawl/abc/refresh/history"] {
+		t.Errorf("endpoints not reached: %v", paths)
+	}
+}
+
+func TestCrawl_Refresh_NotStartedReturnsError(t *testing.T) {
+	client, _ := New("__API_KEY__")
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Refresh: true})
+
+	if _, err := crawl.RefreshNow(); !errors.Is(err, ErrCrawlerNotStarted) {
+		t.Errorf("RefreshNow: %v", err)
+	}
+	if _, err := crawl.RefreshSettings(CrawlRefreshSettings{Enabled: BoolPtr(true)}); !errors.Is(err, ErrCrawlerNotStarted) {
+		t.Errorf("RefreshSettings: %v", err)
+	}
+	if _, err := crawl.RefreshHistory(0); !errors.Is(err, ErrCrawlerNotStarted) {
+		t.Errorf("RefreshHistory: %v", err)
+	}
+}
+
+func TestParseCrawlerStatus_RefreshBlock(t *testing.T) {
+	body := []byte(`{
+	  "crawler_uuid": "abc", "status": "DONE", "is_finished": true, "is_success": true,
+	  "state": {"urls_visited": 1, "urls_extracted": 1, "urls_failed": 0, "urls_skipped": 0,
+	            "urls_to_crawl": 0, "api_credit_used": 1, "duration": 1},
+	  "refresh": {"enabled": true, "interval_seconds": 86400, "status": "SCHEDULED", "generation": 2,
+	              "next_run_at": "2026-09-02T04:00:00Z"}
+	}`)
+	status, err := parseCrawlerStatus(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Refresh == nil || !status.Refresh.Enabled || status.Refresh.IntervalSeconds != 86400 {
+		t.Fatalf("refresh: %+v", status.Refresh)
+	}
+	if status.Refresh.IsRunning() {
+		t.Error("a SCHEDULED crawl must not read as running")
+	}
+}
+
+func TestParseCrawlerStatus_RefreshBlockCarriesTheRunFields(t *testing.T) {
+	// started_at and consecutive_failures are route-scoped: /status relays the
+	// engine's refresh block verbatim and carries both, while the three
+	// refresh calls render the API's own typed state, which declares neither.
+	// One SDK type serves both routes, so both fields have to survive the
+	// route that sends them and stay zero on the route that does not.
+	body := []byte(`{
+	  "crawler_uuid": "abc", "status": "DONE", "is_finished": true, "is_success": true,
+	  "state": {"urls_visited": 1, "urls_extracted": 1, "urls_failed": 0, "urls_skipped": 0,
+	            "urls_to_crawl": 0, "api_credit_used": 1, "duration": 1},
+	  "refresh": {"enabled": true, "interval_seconds": 3600, "status": "RUNNING", "generation": 4,
+	              "started_at": "2026-09-03T22:31:03.851147Z", "consecutive_failures": 2,
+	              "last_run_at": "2026-09-03T21:31:03Z", "next_run_at": null,
+	              "error": "upstream timeout", "history": []}
+	}`)
+	status, err := parseCrawlerStatus(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Refresh.StartedAt != "2026-09-03T22:31:03.851147Z" {
+		t.Errorf("started_at: %+v", status.Refresh)
+	}
+	// A run in flight is the only state that sets started_at, which is what
+	// makes "how long has this been running" answerable at all.
+	if !status.Refresh.IsRunning() {
+		t.Errorf("status: %+v", status.Refresh)
+	}
+	// Two failures in a row separate one flaky run from a dead schedule.
+	if status.Refresh.ConsecutiveFailures != 2 {
+		t.Errorf("consecutive_failures: %+v", status.Refresh)
+	}
+
+	// The refresh calls answer without either key. Absent must decode as the
+	// zero value rather than being invented, or a caller reads a healthy
+	// schedule off a response that never made the claim.
+	callAnswer, err := parseCrawlerRefreshState([]byte(refreshEnvelope))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callAnswer.StartedAt != "" || callAnswer.ConsecutiveFailures != 0 {
+		t.Errorf("refresh-call answer invented run fields: %+v", callAnswer)
+	}
+}
+
+func TestParseCrawlerRefreshState_AcceptsBothEnvelopeShapes(t *testing.T) {
+	// The refresh endpoints answer with the state at the top level; /status
+	// nests it under "refresh". Both must decode to the same thing.
+	flat, err := parseCrawlerRefreshState([]byte(refreshEnvelope))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested, err := parseCrawlerRefreshState([]byte(`{"crawler_uuid": "abc", "refresh": ` + refreshEnvelope + `}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flat.Generation != nested.Generation || len(flat.History) != len(nested.History) {
+		t.Errorf("shapes disagree: %+v vs %+v", flat, nested)
 	}
 }

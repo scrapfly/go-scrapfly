@@ -57,6 +57,9 @@ const (
 	WebhookCrawlerStopped       CrawlerWebhookEvent = "crawler_stopped"
 	WebhookCrawlerCancelled     CrawlerWebhookEvent = "crawler_cancelled"
 	WebhookCrawlerFinished      CrawlerWebhookEvent = "crawler_finished"
+	WebhookCrawlerSearchReady   CrawlerWebhookEvent = "crawler_search_ready"
+	WebhookCrawlerSearchFailed  CrawlerWebhookEvent = "crawler_search_failed"
+	WebhookCrawlerUpdated       CrawlerWebhookEvent = "crawler_updated"
 )
 
 // IsValid returns true when the event is one of the documented values.
@@ -64,7 +67,8 @@ func (e CrawlerWebhookEvent) IsValid() bool {
 	switch e {
 	case WebhookCrawlerStarted, WebhookCrawlerURLVisited, WebhookCrawlerURLSkipped,
 		WebhookCrawlerURLDiscovered, WebhookCrawlerURLFailed, WebhookCrawlerStopped,
-		WebhookCrawlerCancelled, WebhookCrawlerFinished:
+		WebhookCrawlerCancelled, WebhookCrawlerFinished,
+		WebhookCrawlerSearchReady, WebhookCrawlerSearchFailed, WebhookCrawlerUpdated:
 		return true
 	}
 	return false
@@ -133,6 +137,19 @@ type CrawlerConfig struct {
 	// Content extraction.
 	ContentFormats  []CrawlerContentFormat `validate:"enum"`
 	ExtractionRules map[string]interface{}
+
+	// Search index built while the crawl runs. Query it with CrawlSearch /
+	// CrawlPrompt once the index reaches READY.
+	Search bool
+
+	// Refresh keeps this crawl fresh: its own URLs are re-scraped in place on
+	// a period, under the same crawler UUID and the same artifacts. Only pages
+	// whose content changed are re-indexed and pages that disappeared are
+	// dropped.
+	Refresh bool
+	// RefreshInterval is the period in seconds, CrawlerRefreshMinInterval to
+	// CrawlerRefreshMaxInterval. Zero leaves the server default period.
+	RefreshInterval int
 
 	// Web scraping features.
 	ASP       bool
@@ -258,6 +275,15 @@ func (c *CrawlerConfig) buildBodyMap() map[string]interface{} {
 	}
 	if len(c.ExtractionRules) > 0 {
 		body["extraction_rules"] = c.ExtractionRules
+	}
+	if c.Search {
+		body["search"] = true
+	}
+	if c.Refresh {
+		body["refresh"] = true
+	}
+	if c.RefreshInterval != 0 {
+		body["refresh_interval"] = c.RefreshInterval
 	}
 	if c.ASP {
 		body["asp"] = true
@@ -404,6 +430,15 @@ func (c *CrawlerConfig) validateBounds() error {
 	}
 	if len(c.AllowedInternalSubdomains) > 250 {
 		return fmt.Errorf("%w: allowed_internal_subdomains is limited to 250 entries, got %d", ErrCrawlerConfig, len(c.AllowedInternalSubdomains))
+	}
+	// refresh_interval: zero means "unset / use default" — only enforce bounds
+	// when non-zero. The floor decides the cost, a crawl refreshing every
+	// minute re-scrapes the whole site 1,440 times a day.
+	if c.RefreshInterval != 0 && (c.RefreshInterval < CrawlerRefreshMinInterval || c.RefreshInterval > CrawlerRefreshMaxInterval) {
+		return fmt.Errorf("%w: refresh_interval must be between %d and %d seconds, got %d", ErrCrawlerConfig, CrawlerRefreshMinInterval, CrawlerRefreshMaxInterval, c.RefreshInterval)
+	}
+	if c.RefreshInterval != 0 && !c.Refresh {
+		return fmt.Errorf("%w: refresh_interval requires Refresh=true", ErrCrawlerConfig)
 	}
 	return nil
 }

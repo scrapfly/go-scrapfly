@@ -197,6 +197,59 @@ func (c *Crawl) URLs(opts *CrawlURLsOptions) (*CrawlerURLs, error) {
 	return c.client.CrawlURLs(c.uuid, opts)
 }
 
+// Search queries this crawl's search index. Thin wrapper around
+// Client.CrawlSearch, which itself goes through the collection endpoint.
+//
+// Requires the crawl to have been started with CrawlerConfig.Search=true and
+// its index to have reached READY or PARTIAL; poll CrawlerStatus.Search or
+// subscribe to the crawler_search_ready webhook. An index that is not ready
+// yet is reported in the response's Skipped list, not as an error.
+func (c *Crawl) Search(query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlSearch(c.uuid, query, opts)
+}
+
+// Prompt answers a question from this crawl's content, streaming the answer
+// through handler. Thin wrapper around Client.CrawlPrompt.
+func (c *Crawl) Prompt(prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error {
+	if err := c.requireStarted(); err != nil {
+		return err
+	}
+	return c.client.CrawlPrompt(c.uuid, prompt, opts, handler)
+}
+
+// RefreshNow re-scrapes this crawl's URLs in place, right now. Thin wrapper
+// around Client.CrawlRefreshNow.
+//
+// The crawl keeps its uuid, its artifacts and its search index; only pages
+// whose content changed are re-indexed and pages that disappeared are dropped.
+func (c *Crawl) RefreshNow() (*CrawlerRefreshState, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlRefreshNow(c.uuid)
+}
+
+// RefreshSettings changes this crawl's refresh schedule. Thin wrapper around
+// Client.CrawlRefreshSettings; only the fields set on settings change.
+func (c *Crawl) RefreshSettings(settings CrawlRefreshSettings) (*CrawlerRefreshState, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlRefreshSettings(c.uuid, settings)
+}
+
+// RefreshHistory reads this crawl's refresh timeline, newest last. Thin
+// wrapper around Client.CrawlRefreshHistory.
+func (c *Crawl) RefreshHistory(limit int) ([]CrawlerRefreshEntry, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlRefreshHistory(c.uuid, limit)
+}
+
 // Read fetches the content for a single crawled URL.
 //
 // Returns a CrawlContent wrapper for parity with the Python SDK's `Crawl.read()`.

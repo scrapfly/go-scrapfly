@@ -1,6 +1,7 @@
 package scrapfly
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ==============================================================================
@@ -441,6 +443,357 @@ func (c *Client) CrawlContentsBatch(uuid string, urls []string, formats []Crawle
 	return parseMultipartRelated(string(bodyBytes), contentType, formatStrs)
 }
 
+// CrawlSearchOptions configures a crawl search request. The zero value is
+// valid: the server applies its own defaults for every unset field.
+type CrawlSearchOptions struct {
+	// Limit caps the number of results, 1-50 (server cap). 0 = server default.
+	Limit int
+	// Mode selects the retrieval legs. Empty = server default (hybrid).
+	Mode CrawlerSearchMode
+	// Filters narrows the searched rows before each crawl's top-K, so a
+	// filter never costs recall. Keys: url_prefix, host, source_format,
+	// content_type, http_status, crawler_uuid. Unknown keys are rejected
+	// server-side rather than ignored.
+	Filters map[string]interface{}
+	// Cursor continues a previous response's ranking. Empty starts page 1.
+	Cursor string
+}
+
+func (o *CrawlSearchOptions) apply(body map[string]interface{}) error {
+	if o == nil {
+		return nil
+	}
+	if o.Limit != 0 {
+		body["limit"] = o.Limit
+	}
+	if o.Mode != "" {
+		if !o.Mode.IsValid() {
+			return fmt.Errorf("%w: search mode must be vector, fts or hybrid, got %q", ErrCrawlerConfig, o.Mode)
+		}
+		body["mode"] = string(o.Mode)
+	}
+	if len(o.Filters) > 0 {
+		body["filters"] = o.Filters
+	}
+	if o.Cursor != "" {
+		body["cursor"] = o.Cursor
+	}
+	return nil
+}
+
+// validateCrawlIDs enforces the shape both collection endpoints share: a
+// non-empty list with no duplicates. Duplicates are rejected by the API, and
+// catching them here saves a round trip that can only fail.
+func validateCrawlIDs(crawlIDs []string) error {
+	if len(crawlIDs) == 0 {
+		return fmt.Errorf("%w: crawl_ids must contain at least one crawler UUID", ErrCrawlerConfig)
+	}
+	seen := make(map[string]struct{}, len(crawlIDs))
+	for _, id := range crawlIDs {
+		if id == "" {
+			return fmt.Errorf("%w: crawl_ids contains an empty crawler UUID", ErrCrawlerConfig)
+		}
+		if _, dup := seen[id]; dup {
+			return fmt.Errorf("%w: crawl_ids contains duplicate crawler UUID %q", ErrCrawlerConfig, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+// CrawlsSearch searches the indexes of one or more crawls and returns one
+// merged ranking.
+//
+// `POST /crawl/search`: the collection endpoint is the real API, and CrawlSearch
+// is sugar over a one-element list so the two cannot drift.
+//
+// Only crawls started with Search=true whose index reached READY or PARTIAL
+// contribute. The rest come back in Skipped with a reason and never fail the
+// call, so always inspect Skipped before concluding a crawl had no match.
+//
+// Example:
+//
+//	res, err := client.CrawlsSearch([]string{uuidA, uuidB}, "TLS fingerprint",
+//	    &scrapfly.CrawlSearchOptions{Limit: 20, Mode: scrapfly.CrawlerSearchModeHybrid})
+//	for _, hit := range res.Results {
+//	    fmt.Printf("%d. %s (%.3f)\n", hit.Rank, hit.URL, hit.Score)
+//	}
+func (c *Client) CrawlsSearch(crawlIDs []string, query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error) {
+	if err := validateCrawlIDs(crawlIDs); err != nil {
+		return nil, err
+	}
+	if query == "" {
+		return nil, fmt.Errorf("%w: query must be a non-empty string", ErrCrawlerConfig)
+	}
+
+	body := map[string]interface{}{
+		"query":     query,
+		"crawl_ids": crawlIDs,
+	}
+	if err := opts.apply(body); err != nil {
+		return nil, err
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode crawler search body: %w", err)
+	}
+
+	endpointURL, _ := url.Parse(c.host + "/crawl/search")
+	q := url.Values{}
+	q.Set("key", c.key)
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(payload)), nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+
+	return parseCrawlerSearch(bodyBytes)
+}
+
+// CrawlSearch searches a single crawl's index.
+//
+// `GET /crawl/{uuid}/search` is the documented convenience path; this SDK
+// reaches the same implementation through the collection endpoint so single
+// and multi-crawl search cannot answer differently.
+func (c *Client) CrawlSearch(uuid, query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+	return c.CrawlsSearch([]string{uuid}, query, opts)
+}
+
+// CrawlPromptOptions configures a prompt request.
+type CrawlPromptOptions struct {
+	// Search overrides retrieval. Nil uses the server's defaults.
+	Search *CrawlSearchOptions
+	// Model names the generation model. Empty = server default.
+	Model string
+}
+
+// CrawlPromptHandler receives each decoded frame of the prompt stream.
+// Returning a non-nil error stops consumption and is returned to the caller;
+// the connection is closed either way.
+type CrawlPromptHandler func(event CrawlerPromptEvent) error
+
+// CrawlsPrompt answers a question from the content of one or more crawls,
+// streaming the answer as it is generated.
+//
+// `POST /crawl/prompt`: the collection endpoint is the real API, and CrawlPrompt
+// is sugar over a one-element list.
+//
+// Frames arrive as sources, then tokens, then one done frame; the handler is
+// called for each. An `event: error` frame is not delivered to the handler:
+// it is returned as an error wrapping ErrCrawlerFailed, which can happen after
+// tokens have already been handed over, since generation fails mid-stream.
+//
+// No retry: the request runs a fan-out and a generation, both billable, and
+// replaying it doubles the bill. fetchWithRetry is deliberately not used here.
+//
+// Example:
+//
+//	err := client.CrawlsPrompt([]string{uuid}, "Summarize the pricing page", nil,
+//	    func(ev scrapfly.CrawlerPromptEvent) error {
+//	        if ev.Type == scrapfly.CrawlerPromptEventToken {
+//	            fmt.Print(ev.Token)
+//	        }
+//	        return nil
+//	    })
+func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error {
+	if err := validateCrawlIDs(crawlIDs); err != nil {
+		return err
+	}
+	if prompt == "" {
+		return fmt.Errorf("%w: prompt must be a non-empty string", ErrCrawlerConfig)
+	}
+	if handler == nil {
+		return fmt.Errorf("%w: handler must not be nil", ErrCrawlerConfig)
+	}
+
+	generation := map[string]interface{}{"stream": true}
+	if opts != nil && opts.Model != "" {
+		generation["model"] = opts.Model
+	}
+	body := map[string]interface{}{
+		"prompt":     prompt,
+		"crawl_ids":  crawlIDs,
+		"generation": generation,
+	}
+	if opts != nil && opts.Search != nil {
+		search := map[string]interface{}{}
+		if err := opts.Search.apply(search); err != nil {
+			return err
+		}
+		if len(search) > 0 {
+			body["search"] = search
+		}
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to encode crawler prompt body: %w", err)
+	}
+
+	endpointURL, _ := url.Parse(c.host + "/crawl/prompt")
+	q := url.Values{}
+	q.Set("key", c.key)
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := c.promptHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("failed to read response body: %w", readErr)
+		}
+		return c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+
+	return consumeCrawlerPromptStream(resp.Body, handler)
+}
+
+// CrawlPrompt answers a question from a single crawl's content.
+func (c *Client) CrawlPrompt(uuid, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error {
+	if uuid == "" {
+		return fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+	return c.CrawlsPrompt([]string{uuid}, prompt, opts, handler)
+}
+
+// crawlPromptStreamTimeout bounds the whole prompt exchange. The API allows
+// retrieval plus up to 150s of generation under a 165s ceiling, and
+// http.Client.Timeout covers reading the body, so the SDK's 150s default would
+// cut a legitimate stream mid-answer.
+const crawlPromptStreamTimeout = 180 * time.Second
+
+// promptHTTPClient returns a client whose deadline outlives the server's own
+// budget. It shallow-copies rather than mutating so an injected Transport,
+// its connection pool and every other request's deadline are left alone. A
+// caller who set a longer timeout, or none at all, keeps theirs.
+func (c *Client) promptHTTPClient() *http.Client {
+	if c.httpClient.Timeout == 0 || c.httpClient.Timeout >= crawlPromptStreamTimeout {
+		return c.httpClient
+	}
+	streaming := *c.httpClient
+	streaming.Timeout = crawlPromptStreamTimeout
+	return &streaming
+}
+
+// consumeCrawlerPromptStream decodes an SSE body into typed frames.
+//
+// Only `event:` and `data:` lines matter; `:keepalive` comment frames exist
+// to keep intermediaries from closing an idle connection and carry nothing.
+// Token payloads are JSON strings; every other frame is a JSON object.
+func consumeCrawlerPromptStream(body io.Reader, handler CrawlPromptHandler) error {
+	scanner := bufio.NewScanner(body)
+	// A single chunk of retrieved context can exceed bufio's 64 KiB default.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+
+	var (
+		eventName string
+		data      []string
+	)
+
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		// A blank line terminates a frame.
+		if line == "" {
+			if eventName != "" && len(data) > 0 {
+				raw := strings.Join(data, "\n")
+				err := handleCrawlerPromptFrame(
+					CrawlerPromptEvent{Type: CrawlerPromptEventType(eventName), Raw: []byte(raw)},
+					raw,
+					handler,
+				)
+				if err != nil {
+					return err
+				}
+			}
+			eventName, data = "", nil
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(line, "event:"):
+			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		case strings.HasPrefix(line, "data:"):
+			data = append(data, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to read prompt stream: %w", err)
+	}
+	return nil
+}
+
+// handleCrawlerPromptFrame decodes one frame's payload and forwards it.
+func handleCrawlerPromptFrame(event CrawlerPromptEvent, raw string, handler CrawlPromptHandler) error {
+	switch event.Type {
+	case CrawlerPromptEventToken:
+		if err := json.Unmarshal([]byte(raw), &event.Token); err != nil {
+			// A server that sends bare text instead of a JSON string is still
+			// sending a token; do not drop the answer over the quoting.
+			event.Token = raw
+		}
+	case CrawlerPromptEventSource:
+		if err := json.Unmarshal([]byte(raw), &event.Source); err != nil {
+			return fmt.Errorf("failed to decode prompt source frame: %w", err)
+		}
+	case CrawlerPromptEventDone:
+		if err := json.Unmarshal([]byte(raw), &event.Done); err != nil {
+			return fmt.Errorf("failed to decode prompt done frame: %w", err)
+		}
+	case CrawlerPromptEventError:
+		var apiErr errorResponse
+		_ = json.Unmarshal([]byte(raw), &apiErr)
+		msg := apiErr.Message
+		if msg == "" {
+			msg = raw
+		}
+		return fmt.Errorf("%w: %s (%s)", ErrCrawlerFailed, msg, apiErr.Code)
+	}
+	return handler(event)
+}
+
 // CrawlCancel cancels a running crawler job.
 //
 // `POST /crawl/{uuid}/cancel` — proxied through to the crawler backend's
@@ -480,6 +833,190 @@ func (c *Client) CrawlCancel(uuid string) error {
 		return c.handleCrawlerErrorResponse(resp, bodyBytes)
 	}
 	return nil
+}
+
+// CrawlRefreshNow runs one refresh of an existing crawl immediately, without
+// waiting for the next scheduled period.
+//
+// `POST /crawl/{uuid}/refresh` re-scrapes the crawl's own URLs in place: same
+// crawler UUID, same artifacts, same search index. Only pages whose content
+// actually changed are re-indexed, and pages that disappeared are dropped, so
+// everything already pointing at this crawl keeps working.
+//
+// A refresh bills the pages it re-scrapes, exactly like the original crawl.
+// What unchanged pages save is the embedding and the index write.
+//
+// This call is NOT retried on failure: a retry would start a second re-scrape
+// of the whole site, and that is billable.
+func (c *Client) CrawlRefreshNow(uuid string) (*CrawlerRefreshState, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+
+	endpointURL, _ := url.Parse(c.host + "/crawl/" + url.PathEscape(uuid) + "/refresh")
+	q := url.Values{}
+	q.Set("key", c.key)
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("POST", endpointURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return nil, c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+
+	return parseCrawlerRefreshState(bodyBytes)
+}
+
+// CrawlRefreshSettings is the body of a PATCH /crawl/{uuid}/refresh call.
+//
+// Both fields are pointers so that "leave alone" stays distinguishable from
+// "set to false" / "set to zero": turning a crawl off must keep its interval
+// for when it is turned back on.
+type CrawlRefreshSettings struct {
+	Enabled         *bool
+	IntervalSeconds *int
+}
+
+// CrawlRefreshSettings changes the refresh schedule of an existing crawl.
+//
+// `PATCH /crawl/{uuid}/refresh`: only the fields set on settings are changed.
+// Turning refresh on for a crawl started without it is allowed: the crawl
+// already holds the URL index a refresh walks.
+func (c *Client) CrawlRefreshSettings(uuid string, settings CrawlRefreshSettings) (*CrawlerRefreshState, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+	if settings.Enabled == nil && settings.IntervalSeconds == nil {
+		return nil, fmt.Errorf("%w: set at least one of Enabled, IntervalSeconds", ErrCrawlerConfig)
+	}
+	if settings.IntervalSeconds != nil && (*settings.IntervalSeconds < CrawlerRefreshMinInterval || *settings.IntervalSeconds > CrawlerRefreshMaxInterval) {
+		return nil, fmt.Errorf("%w: interval_seconds must be between %d and %d seconds, got %d", ErrCrawlerConfig, CrawlerRefreshMinInterval, CrawlerRefreshMaxInterval, *settings.IntervalSeconds)
+	}
+
+	// Wire keys are the ones POST /crawl already takes, so a crawl body and a
+	// later PATCH name the same things. The enabled/interval_seconds spelling
+	// belongs to the state block this call answers with, not to its request;
+	// the API decodes the body with unknown fields rejected.
+	payload := map[string]interface{}{}
+	if settings.Enabled != nil {
+		payload["refresh"] = *settings.Enabled
+	}
+	if settings.IntervalSeconds != nil {
+		payload["refresh_interval"] = *settings.IntervalSeconds
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode refresh settings: %w", err)
+	}
+
+	endpointURL, _ := url.Parse(c.host + "/crawl/" + url.PathEscape(uuid) + "/refresh")
+	q := url.Values{}
+	q.Set("key", c.key)
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("PATCH", endpointURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+
+	return parseCrawlerRefreshState(bodyBytes)
+}
+
+// CrawlRefreshHistory reads a crawl's refresh timeline, newest last.
+//
+// `GET /crawl/{uuid}/refresh/history`: the server keeps the 50 most recent
+// runs; older rows are trimmed rather than paged, because the timeline exists
+// to show recent activity. Pass limit 0 for everything the server kept.
+func (c *Client) CrawlRefreshHistory(uuid string, limit int) ([]CrawlerRefreshEntry, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+
+	endpointURL, _ := url.Parse(c.host + "/crawl/" + url.PathEscape(uuid) + "/refresh/history")
+	q := url.Values{}
+	q.Set("key", c.key)
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("GET", endpointURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+
+	state, err := parseCrawlerRefreshState(bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	return state.History, nil
+}
+
+// parseCrawlerRefreshState decodes a refresh envelope. The three refresh
+// endpoints answer with the state at the top level; GET /status nests it under
+// "refresh", so both shapes are accepted and the SDK never has to guess which
+// call produced the bytes.
+func parseCrawlerRefreshState(body []byte) (*CrawlerRefreshState, error) {
+	var nested struct {
+		Refresh *CrawlerRefreshState `json:"refresh"`
+	}
+	if err := json.Unmarshal(body, &nested); err == nil && nested.Refresh != nil {
+		return nested.Refresh, nil
+	}
+
+	var state CrawlerRefreshState
+	if err := json.Unmarshal(body, &state); err != nil {
+		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
+	}
+	return &state, nil
 }
 
 // CrawlArtifact downloads a crawler job's WARC or HAR artifact.
