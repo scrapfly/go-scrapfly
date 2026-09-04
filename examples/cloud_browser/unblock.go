@@ -16,7 +16,7 @@ func main() {
 	}
 
 	// Step 1: Bypass anti-bot protection on the target page.
-	// The /unblock endpoint runs Scrapfly's ASP shields and returns a
+	// The /unblock endpoint runs Scrapfly's unblocker shields and returns a
 	// WebSocket URL pointing at a Cloud Browser session that already has
 	// the cleared cookies / state pre-loaded.
 	fmt.Println("Calling /unblock...")

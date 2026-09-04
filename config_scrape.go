@@ -19,12 +19,12 @@ import (
 // Example:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:      "https://example.com",
-//	    RenderJS: true,
-//	    Country:  "us",
-//	    ASP:      true,
-//	    Cache:    true,
-//	    Format:   scrapfly.FormatMarkdown,
+//	    URL:       "https://example.com",
+//	    RenderJS:  true,
+//	    Country:   "us",
+//	    Unblocker: scrapfly.BoolPtr(true),
+//	    Cache:     true,
+//	    Format:    scrapfly.FormatMarkdown,
 //	}
 type ScrapeConfig struct {
 	// URL is the target URL to scrape (required).
@@ -47,7 +47,27 @@ type ScrapeConfig struct {
 	ProxyPool ProxyPool
 	// RenderJS enables JavaScript rendering using a headless browser.
 	RenderJS bool
+	// Unblocker enables the anti-bot bypass (formerly "ASP").
+	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
+	// Serialized as the "asp" query parameter — the wire key is unchanged.
+	// See resolveUnblocker for the ASP/Unblocker precedence rule.
+	//
+	// The two names are two INDEPENDENT fields, not an aliased pair: writing
+	// one never updates the other, so reading Unblocker after setting ASP
+	// returns nil, and ASP: true wins no matter which was written last. To turn
+	// the feature off, clear ASP — setting Unblocker to BoolPtr(false) does not
+	// override an ASP: true. Use UnblockerEnabled to read what will actually go
+	// on the wire. The other Scrapfly SDKs expose one storage slot behind two
+	// names, so this and the ASP: false + Unblocker: BoolPtr(true) row are the
+	// two places Go answers differently; both follow from ASP being a plain
+	// bool, which cannot be retyped without breaking every existing caller.
+	Unblocker *bool
 	// ASP enables Anti-Scraping Protection bypass.
+	//
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
 	// Cache enables response caching.
 	Cache bool
@@ -114,8 +134,9 @@ type ScrapeConfig struct {
 	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
 	// Invalid values are silently dropped by the server.
 	BrowserBrand string
-	// CostBudget limits the maximum API credit cost for ASP retries.
-	// ASP dynamically upgrades proxy/browser to bypass protection; this caps spending.
+	// CostBudget limits the maximum API credit cost for unblocker retries.
+	// The unblocker dynamically upgrades proxy/browser to bypass protection;
+	// this caps spending.
 	CostBudget int
 	// Geolocation spoofs the browser's geolocation. Format: "latitude,longitude".
 	Geolocation string
@@ -301,7 +322,8 @@ func (c *ScrapeConfig) toAPIParamsWithValidation() (url.Values, error) {
 		}
 	}
 
-	if c.ASP {
+	// Wire key stays "asp" for both ASP and Unblocker — see resolveUnblocker.
+	if resolveUnblocker(c.ASP, c.Unblocker) {
 		params.Set("asp", "true")
 	}
 	if !c.Retry {

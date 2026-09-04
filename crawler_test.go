@@ -41,9 +41,12 @@ func TestCrawlerConfig_MinimalConfigOnlyHasURL(t *testing.T) {
 		t.Errorf("url not set: %v", decoded["url"])
 	}
 	// Every optional field is absent so the server applies its own defaults.
+	// "asp" is the anti-bot wire key and "unblocker" is its SDK-facing name:
+	// neither may appear when the caller set nothing — the first would force
+	// the feature on, the second is a key the API does not know.
 	forbidden := []string{
 		"respect_robots_txt", "follow_internal_subdomains", "page_limit",
-		"max_depth", "cache", "asp", "user_agent",
+		"max_depth", "cache", "asp", "unblocker", "user_agent",
 	}
 	for _, key := range forbidden {
 		if _, ok := decoded[key]; ok {
@@ -1387,6 +1390,7 @@ func TestClient_CrawlsPrompt_StreamsFrames(t *testing.T) {
 			"event: token\ndata: \"The\"\n\n" +
 			"event: token\ndata: \" answer\"\n\n" +
 			"event: done\ndata: {\"sources_used\":[1],\"sources_dropped\":2,\"truncated\":false," +
+			"\"api_credit\":3," +
 			"\"usage\":{\"prompt_token_count\":30,\"candidates_token_count\":9,\"thoughts_token_count\":3," +
 			"\"total_token_count\":42,\"cost\":{\"input\":0.000012,\"output\":0.000048}," +
 			"\"model\":\"gemini-2.5-flash\"}}\n\n"))
@@ -1445,6 +1449,35 @@ func TestClient_CrawlsPrompt_StreamsFrames(t *testing.T) {
 	// Dropped sources were retrieved and ranked but never shown to the model.
 	if done.SourcesDropped != 2 {
 		t.Errorf("sources_dropped: %d", done.SourcesDropped)
+	}
+	// api_credit is the one cost fact the API does publish, and it is what the
+	// run was actually charged rather than the list price.
+	if done.APICredit == nil || *done.APICredit != 3 {
+		t.Errorf("api_credit: %v", done.APICredit)
+	}
+}
+
+// An engine too old to report the charge sends no api_credit key. That is not
+// the same fact as a zero charge, so it must stay nil rather than decode to 0 —
+// a caller printing 0 would be reporting a free run that was billed.
+func TestClient_CrawlsPrompt_DoneWithoutAPICreditStaysNil(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: done\ndata: {\"sources_used\":[],\"sources_dropped\":0,\"truncated\":false}\n\n"))
+	})
+
+	var done CrawlerPromptDone
+	err := client.CrawlsPrompt([]string{"0198aaaa"}, "anything", nil, func(ev CrawlerPromptEvent) error {
+		if ev.Type == CrawlerPromptEventDone {
+			done = ev.Done
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.APICredit != nil {
+		t.Errorf("api_credit: want nil for an engine that does not report it, got %d", *done.APICredit)
 	}
 }
 

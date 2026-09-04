@@ -84,10 +84,10 @@ func (e CrawlerWebhookEvent) String() string { return string(e) }
 // a hosted text file fetched at crawl start, no discovery). Other fields are
 // optional and default to server-side values when zero-valued.
 //
-// Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains) use *bool so
-// the SDK can distinguish "unset" from "explicit false". Setting a bool field
-// directly (e.g. UseSitemaps=true) is sent as-is; only the tri-state fields
-// need pointer semantics.
+// Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains, Unblocker) use
+// *bool so the SDK can distinguish "unset" from "explicit false". Setting a
+// bool field directly (e.g. UseSitemaps=true) is sent as-is; only the tri-state
+// fields need pointer semantics.
 type CrawlerConfig struct {
 	// URL source — exactly one of URL, URLList, RemoteURLList. URL enables
 	// discovery (sitemaps, robots.txt, link-following); URLList and
@@ -152,6 +152,29 @@ type CrawlerConfig struct {
 	RefreshInterval int
 
 	// Web scraping features.
+
+	// Unblocker enables the anti-bot bypass (formerly "ASP").
+	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
+	// Serialized into the POST /crawl body under the "asp" key — the wire key
+	// is unchanged.
+	// See resolveUnblocker for the ASP/Unblocker precedence rule.
+	//
+	// The two names are two INDEPENDENT fields, not an aliased pair: writing
+	// one never updates the other, so reading Unblocker after setting ASP
+	// returns nil, and ASP: true wins no matter which was written last. To turn
+	// the feature off, clear ASP — setting Unblocker to BoolPtr(false) does not
+	// override an ASP: true. Use UnblockerEnabled to read what will actually go
+	// on the wire. The other Scrapfly SDKs expose one storage slot behind two
+	// names, so this and the ASP: false + Unblocker: BoolPtr(true) row are the
+	// two places Go answers differently; both follow from ASP being a plain
+	// bool, which cannot be retyped without breaking every existing caller.
+	Unblocker *bool
+	// ASP enables Anti-Scraping Protection bypass.
+	//
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP       bool
 	ProxyPool string
 	Country   string
@@ -285,7 +308,8 @@ func (c *CrawlerConfig) buildBodyMap() map[string]interface{} {
 	if c.RefreshInterval != 0 {
 		body["refresh_interval"] = c.RefreshInterval
 	}
-	if c.ASP {
+	// Wire key stays "asp" for both ASP and Unblocker — see resolveUnblocker.
+	if resolveUnblocker(c.ASP, c.Unblocker) {
 		body["asp"] = true
 	}
 	if c.ProxyPool != "" {

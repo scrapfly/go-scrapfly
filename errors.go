@@ -58,7 +58,18 @@ var (
 	ErrProxyFailed = errors.New("proxy error")
 
 	// ErrASPBypassFailed indicates Anti-Scraping Protection bypass failed.
+	//
+	// The name is frozen: the API reports this as ERR::ASP::* and existing
+	// callers match on this identifier. ErrUnblockerBypassFailed is the same
+	// value under the current name.
 	ErrASPBypassFailed = errors.New("ASP bypass error")
+
+	// ErrUnblockerBypassFailed indicates the unblocker (formerly "ASP") failed
+	// to bypass the target's anti-bot protection.
+	//
+	// It is the SAME error value as ErrASPBypassFailed, not a second sentinel,
+	// so errors.Is matches either name against the same wrapped error.
+	ErrUnblockerBypassFailed = ErrASPBypassFailed
 
 	// ErrScheduleFailed indicates a scheduled job error.
 	ErrScheduleFailed = errors.New("schedule error")

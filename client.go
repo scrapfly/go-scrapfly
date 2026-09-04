@@ -167,7 +167,7 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error) {
 // The method supports various features including:
 //   - JavaScript rendering (RenderJS)
 //   - Proxy rotation and geo-targeting
-//   - Anti-bot protection (ASP)
+//   - Anti-bot protection bypass (Unblocker)
 //   - Custom headers and cookies
 //   - Screenshot capture
 //   - Data extraction
@@ -175,10 +175,10 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error) {
 // Example:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:      "https://example.com",
-//	    RenderJS: true,
-//	    Country:  "us",
-//	    ASP:      true,
+//	    URL:       "https://example.com",
+//	    RenderJS:  true,
+//	    Country:   "us",
+//	    Unblocker: scrapfly.BoolPtr(true),
 //	}
 //	result, err := client.Scrape(config)
 //	if err != nil {

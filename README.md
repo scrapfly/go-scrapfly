@@ -47,7 +47,7 @@ func main() {
 		URL:        "https://web-scraping.dev/product/1",
 		RenderJS:   true,
 		Country:    "us",
-		ASP:        true,
+		Unblocker:  scrapfly.BoolPtr(true),
 		ProxyPool:  scrapfly.PublicResidentialPool,
 	}
 
@@ -67,6 +67,65 @@ func main() {
 	}
 	
 	fmt.Println("Product Title:", selector.Find("h3").First().Text())
+}
+```
+
+## Unblocker
+
+`Unblocker` turns on Scrapfly's anti-bot bypass. It is a `*bool`, so use
+`scrapfly.BoolPtr(true)` to enable it and `scrapfly.BoolPtr(false)` to
+explicitly disable it; leaving it `nil` means "unset".
+
+```go
+scrapeConfig := &scrapfly.ScrapeConfig{
+	URL:       "https://web-scraping.dev/product/1",
+	Unblocker: scrapfly.BoolPtr(true),
+}
+
+crawlerConfig := &scrapfly.CrawlerConfig{
+	URL:       "https://web-scraping.dev/",
+	Unblocker: scrapfly.BoolPtr(true),
+}
+```
+
+`ASP` is the deprecated alias of `Unblocker` and keeps working — existing code
+needs no change. Only the name changed: both fields are sent to the API as the
+same `asp` parameter. When both are set, `ASP: true` wins, since a plain `bool`
+cannot tell "unset" from "explicitly false".
+
+That same limitation makes one row diverge from the other Scrapfly SDKs. Since
+`ASP: false` is indistinguishable from an unset `ASP`, the pair
+`ASP: false, Unblocker: scrapfly.BoolPtr(true)` turns the feature **on** here,
+where the Python, TypeScript and Rust SDKs let the explicit `false` win.
+Retyping `ASP` to `*bool` would fix it but would stop every existing caller from
+compiling, so it stays a `bool`. To turn the feature off, leave `Unblocker` nil
+or pass `scrapfly.BoolPtr(false)` — do not write that contradictory pair.
+
+The two names are also two **independent fields**, where the other SDKs expose
+one storage slot under two names. Writing one never updates the other, so:
+
+```go
+cfg.ASP = true
+cfg.Unblocker = scrapfly.BoolPtr(false) // does NOT turn it off — ASP still wins
+cfg.Unblocker                            // nil after cfg.ASP = true
+```
+
+Last write does not win, and reading one name back after writing the other gives
+the zero value. To turn the feature off, clear `ASP`. To read what the request
+will actually carry, call `UnblockerEnabled()`:
+
+```go
+cfg := &scrapfly.ScrapeConfig{URL: "https://web-scraping.dev/", Unblocker: scrapfly.BoolPtr(true)}
+cfg.UnblockerEnabled() // true — the value that goes out as `asp`
+```
+
+The matching error sentinel is `scrapfly.ErrUnblockerBypassFailed`, the same
+value as the deprecated `scrapfly.ErrASPBypassFailed`, so `errors.Is` matches
+either name:
+
+```go
+if errors.Is(err, scrapfly.ErrUnblockerBypassFailed) {
+	// the unblocker could not get through the target's protection
 }
 ```
 

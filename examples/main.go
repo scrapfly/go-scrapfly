@@ -28,7 +28,7 @@ func getAccount(apiKey string) {
 	fmt.Println(string(accountJSON))
 }
 
-// basicGet demonstrates basic scraping with cache and ASP
+// basicGet demonstrates basic scraping with cache and the unblocker
 func basicGet(apiKey string) {
 	client, err := scrapfly.New(apiKey)
 	if err != nil {
@@ -37,8 +37,9 @@ func basicGet(apiKey string) {
 
 	scrapeResult, err := client.Scrape(&scrapfly.ScrapeConfig{
 		URL: "https://httpbin.dev/html",
-		// Anti Scraping Protection bypass - enable this when scraping protected targets
-		ASP: true,
+		// Anti-bot bypass - enable this when scraping protected targets.
+		// Unblocker is a *bool; ASP is the deprecated alias that still works.
+		Unblocker: scrapfly.BoolPtr(true),
 		// server side cache - great for repeated requests
 		Cache:    true,
 		CacheTTL: 3600, // in seconds

@@ -398,9 +398,9 @@ type CrawlerPromptSource struct {
 	Score       float64 `json:"score"`
 }
 
-// CrawlerPromptUsage mirrors the model's token accounting.
-//
-// CrawlerPromptDone is the terminal frame's payload.
+// CrawlerPromptDone is the terminal frame's payload. Token counts and the model
+// id are deliberately absent: the API withholds them from customers because they
+// would expose our margin, and the price is the flat APICredit below.
 type CrawlerPromptDone struct {
 	SourcesUsed []int `json:"sources_used"`
 	// SourcesDropped counts retrieved chunks that did not fit the context
@@ -410,6 +410,10 @@ type CrawlerPromptDone struct {
 	// Truncated is true when the model hit its output cap. The answer is
 	// returned anyway; it is the caller's call whether to use it.
 	Truncated bool `json:"truncated"`
+	// APICredit is what the engine actually charged, which is not always the
+	// list price: a run that produced no answer bills zero. Nil means an engine
+	// too old to report it, so fall back to the flat price rather than to zero.
+	APICredit *int `json:"api_credit,omitempty"`
 }
 
 // CrawlerPromptEvent is one decoded frame of the prompt stream. Exactly one

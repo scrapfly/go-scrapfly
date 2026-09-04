@@ -11,7 +11,7 @@ scraping tasks.
 
   - Web scraping with automatic proxy rotation
   - JavaScript rendering with headless browsers
-  - Anti-bot protection (ASP) bypass
+  - Anti-bot protection bypass (Unblocker)
   - Screenshot capture with multiple formats
   - AI-powered structured data extraction
   - Session management for persistent browsing
@@ -78,6 +78,18 @@ JavaScript Rendering:
         AutoScroll:      true,
     }
 
+Unblocker (anti-bot bypass):
+
+    config := &scrapfly.ScrapeConfig{
+        URL:       "https://example.com",
+        Unblocker: scrapfly.BoolPtr(true),
+    }
+
+Unblocker is a *bool: nil leaves it unset, BoolPtr(true) enables the bypass and
+BoolPtr(false) explicitly disables it. ASP is the deprecated alias and keeps
+working — both fields are sent to the API as the same "asp" parameter, and ASP:
+true wins if both are set.
+
 Taking Screenshots:
 
     config := &scrapfly.ScreenshotConfig{
@@ -127,6 +139,9 @@ The SDK uses sentinel errors that can be checked with errors.Is():
             // Target website returned 4xx error
         } else if errors.Is(err, scrapfly.ErrProxyFailed) {
             // Proxy connection failed
+        } else if errors.Is(err, scrapfly.ErrUnblockerBypassFailed) {
+            // The unblocker could not get through the target's protection.
+            // Same value as the deprecated ErrASPBypassFailed.
         } else if apiErr, ok := err.(*scrapfly.APIError); ok {
             // Get detailed API error information
             fmt.Printf("Status: %d, Message: %s\n", apiErr.HTTPStatusCode, apiErr.Message)
@@ -179,6 +194,41 @@ const (
 	CrawlerStopStorageError    = "storage_error"
 )
     Documented values for CrawlerState.StopReason.
+
+const (
+	CrawlerSearchDisabled = "DISABLED"
+	CrawlerSearchBuilding = "BUILDING"
+	CrawlerSearchReady    = "READY"
+	CrawlerSearchPartial  = "PARTIAL"
+	CrawlerSearchFailed   = "FAILED"
+)
+    Search index states carried by CrawlerSearchState.Status. Only READY and
+    PARTIAL can answer a query.
+
+const (
+	CrawlerSkipSearchNotEnabled  = "search_not_enabled"
+	CrawlerSkipSearchNotReady    = "search_not_ready"
+	CrawlerSkipSearchFailed      = "search_failed"
+	CrawlerSkipSearchDisabled    = "search_disabled"
+	CrawlerSkipIncompatibleIndex = "incompatible_index"
+	CrawlerSkipDeadline          = "deadline"
+)
+    Skip reasons reported per crawl in CrawlerSearchResponse.Skipped.
+
+const (
+	CrawlerRefreshMinInterval = 3600
+	CrawlerRefreshMaxInterval = 90 * 24 * 3600
+)
+    Refresh interval bounds, in seconds. The floor decides the cost: a crawl
+    refreshing every minute re-scrapes the whole site 1,440 times a day.
+
+const (
+	CrawlerRefreshDisabled  = "DISABLED"
+	CrawlerRefreshScheduled = "SCHEDULED"
+	CrawlerRefreshRunning   = "RUNNING"
+	CrawlerRefreshFailed    = "FAILED"
+)
+    Refresh states carried by CrawlerRefreshState.Status.
 
 
 VARIABLES
@@ -234,7 +284,18 @@ var (
 	ErrProxyFailed = errors.New("proxy error")
 
 	// ErrASPBypassFailed indicates Anti-Scraping Protection bypass failed.
+	//
+	// The name is frozen: the API reports this as ERR::ASP::* and existing
+	// callers match on this identifier. ErrUnblockerBypassFailed is the same
+	// value under the current name.
 	ErrASPBypassFailed = errors.New("ASP bypass error")
+
+	// ErrUnblockerBypassFailed indicates the unblocker (formerly "ASP") failed
+	// to bypass the target's anti-bot protection.
+	//
+	// It is the SAME error value as ErrASPBypassFailed, not a second sentinel,
+	// so errors.Is matches either name against the same wrapped error.
+	ErrUnblockerBypassFailed = ErrASPBypassFailed
 
 	// ErrScheduleFailed indicates a scheduled job error.
 	ErrScheduleFailed = errors.New("schedule error")
@@ -297,8 +358,9 @@ func GetEnumFor[V Enumerable[T], T fmt.Stringer]() []T
 func IsValidEnumType[T fmt.Stringer](f T) bool
 func ProjectSalt(apiKey string) string
     ProjectSalt returns the deterministic project salt for an api key
-    (sha256(apiKey)[:8]). Matches the X-Browser-Project-Salt response header
-    returned on a successful Cloud Browser WebSocket upgrade.
+    (sha256(apiKey)[:8]). The Cloud Browser service returns the same value
+    as the X-Browser-Project-Salt response header on VNC-enabled upgrades,
+    where the salt is also the VNC password prefix (<salt>-<password>).
 
 func ValidateAlertCreate(req AlertCreateRequest) error
     ValidateAlertCreate runs the same checks the API performs server-side
@@ -1010,6 +1072,45 @@ func (c *Client) CrawlContentsPlain(uuid, targetURL string, format CrawlerConten
     content-type based on the format (text/markdown, text/html, text/plain,
     application/json).
 
+func (c *Client) CrawlPrompt(uuid, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
+    CrawlPrompt answers a question from a single crawl's content.
+
+func (c *Client) CrawlRefreshHistory(uuid string, limit int) ([]CrawlerRefreshEntry, error)
+    CrawlRefreshHistory reads a crawl's refresh timeline, newest last.
+
+    `GET /crawl/{uuid}/refresh/history`: the server keeps the 50 most recent
+    runs; older rows are trimmed rather than paged, because the timeline exists
+    to show recent activity. Pass limit 0 for everything the server kept.
+
+func (c *Client) CrawlRefreshNow(uuid string) (*CrawlerRefreshState, error)
+    CrawlRefreshNow runs one refresh of an existing crawl immediately, without
+    waiting for the next scheduled period.
+
+    `POST /crawl/{uuid}/refresh` re-scrapes the crawl's own URLs in place: same
+    crawler UUID, same artifacts, same search index. Only pages whose content
+    actually changed are re-indexed, and pages that disappeared are dropped,
+    so everything already pointing at this crawl keeps working.
+
+    A refresh bills the pages it re-scrapes, exactly like the original crawl.
+    What unchanged pages save is the embedding and the index write.
+
+    This call is NOT retried on failure: a retry would start a second re-scrape
+    of the whole site, and that is billable.
+
+func (c *Client) CrawlRefreshSettings(uuid string, settings CrawlRefreshSettings) (*CrawlerRefreshState, error)
+    CrawlRefreshSettings changes the refresh schedule of an existing crawl.
+
+    `PATCH /crawl/{uuid}/refresh`: only the fields set on settings are changed.
+    Turning refresh on for a crawl started without it is allowed: the crawl
+    already holds the URL index a refresh walks.
+
+func (c *Client) CrawlSearch(uuid, query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error)
+    CrawlSearch searches a single crawl's index.
+
+    `GET /crawl/{uuid}/search` is the documented convenience path; this SDK
+    reaches the same implementation through the collection endpoint so single
+    and multi-crawl search cannot answer differently.
+
 func (c *Client) CrawlStatus(uuid string) (*CrawlerStatus, error)
     CrawlStatus fetches the current status of a crawler job.
 
@@ -1030,6 +1131,50 @@ func (c *Client) CrawlURLs(uuid string, opts *CrawlURLsOptions) (*CrawlerURLs, e
 
     Pagination: the wire protocol carries no global total count. Request further
     pages by incrementing Page until an empty response.
+
+func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
+    CrawlsPrompt answers a question from the content of one or more crawls,
+    streaming the answer as it is generated.
+
+    `POST /crawl/prompt`: the collection endpoint is the real API, and
+    CrawlPrompt is sugar over a one-element list.
+
+    Frames arrive as sources, then tokens, then one done frame; the handler is
+    called for each. An `event: error` frame is not delivered to the handler:
+    it is returned as an error wrapping ErrCrawlerFailed, which can happen after
+    tokens have already been handed over, since generation fails mid-stream.
+
+    No retry: the request runs a fan-out and a generation, both billable, and
+    replaying it doubles the bill. fetchWithRetry is deliberately not used here.
+
+    Example:
+
+        err := client.CrawlsPrompt([]string{uuid}, "Summarize the pricing page", nil,
+            func(ev scrapfly.CrawlerPromptEvent) error {
+                if ev.Type == scrapfly.CrawlerPromptEventToken {
+                    fmt.Print(ev.Token)
+                }
+                return nil
+            })
+
+func (c *Client) CrawlsSearch(crawlIDs []string, query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error)
+    CrawlsSearch searches the indexes of one or more crawls and returns one
+    merged ranking.
+
+    `POST /crawl/search`: the collection endpoint is the real API, and
+    CrawlSearch is sugar over a one-element list so the two cannot drift.
+
+    Only crawls started with Search=true whose index reached READY or PARTIAL
+    contribute. The rest come back in Skipped with a reason and never fail the
+    call, so always inspect Skipped before concluding a crawl had no match.
+
+    Example:
+
+        res, err := client.CrawlsSearch([]string{uuidA, uuidB}, "TLS fingerprint",
+            &scrapfly.CrawlSearchOptions{Limit: 20, Mode: scrapfly.CrawlerSearchModeHybrid})
+        for _, hit := range res.Results {
+            fmt.Printf("%d. %s (%.3f)\n", hit.Rank, hit.URL, hit.Score)
+        }
 
 func (c *Client) CreateAlert(req AlertCreateRequest) (*Alert, error)
     CreateAlert persists a new alert definition. The returned Alert carries the
@@ -1152,7 +1297,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
     The method supports various features including:
       - JavaScript rendering (RenderJS)
       - Proxy rotation and geo-targeting
-      - Anti-bot protection (ASP)
+      - Anti-bot protection bypass (Unblocker)
       - Custom headers and cookies
       - Screenshot capture
       - Data extraction
@@ -1160,10 +1305,10 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
     Example:
 
         config := &scrapfly.ScrapeConfig{
-            URL:      "https://example.com",
-            RenderJS: true,
-            Country:  "us",
-            ASP:      true,
+            URL:       "https://example.com",
+            RenderJS:  true,
+            Country:   "us",
+            Unblocker: scrapfly.BoolPtr(true),
         }
         result, err := client.Scrape(config)
         if err != nil {
@@ -1648,6 +1793,10 @@ func (c *Crawl) Contents(format CrawlerContentFormat, opts *CrawlContentsOptions
 func (c *Crawl) HAR() (*CrawlerArtifact, error)
     HAR downloads the HAR artifact for this crawl (cached after first call).
 
+func (c *Crawl) Prompt(prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
+    Prompt answers a question from this crawl's content, streaming the answer
+    through handler. Thin wrapper around Client.CrawlPrompt.
+
 func (c *Crawl) Read(targetURL string, format CrawlerContentFormat) (*CrawlContent, error)
     Read fetches the content for a single crawled URL.
 
@@ -1666,6 +1815,30 @@ func (c *Crawl) ReadString(targetURL string, format CrawlerContentFormat) (strin
     ReadString is a convenience wrapper for callers that just want the raw
     content string without the CrawlContent envelope. Returns an empty string
     (and nil error) when the URL isn't part of this crawl.
+
+func (c *Crawl) RefreshHistory(limit int) ([]CrawlerRefreshEntry, error)
+    RefreshHistory reads this crawl's refresh timeline, newest last. Thin
+    wrapper around Client.CrawlRefreshHistory.
+
+func (c *Crawl) RefreshNow() (*CrawlerRefreshState, error)
+    RefreshNow re-scrapes this crawl's URLs in place, right now. Thin wrapper
+    around Client.CrawlRefreshNow.
+
+    The crawl keeps its uuid, its artifacts and its search index; only pages
+    whose content changed are re-indexed and pages that disappeared are dropped.
+
+func (c *Crawl) RefreshSettings(settings CrawlRefreshSettings) (*CrawlerRefreshState, error)
+    RefreshSettings changes this crawl's refresh schedule. Thin wrapper around
+    Client.CrawlRefreshSettings; only the fields set on settings change.
+
+func (c *Crawl) Search(query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error)
+    Search queries this crawl's search index. Thin wrapper around
+    Client.CrawlSearch, which itself goes through the collection endpoint.
+
+    Requires the crawl to have been started with CrawlerConfig.Search=true and
+    its index to have reached READY or PARTIAL; poll CrawlerStatus.Search or
+    subscribe to the crawler_search_ready webhook. An index that is not ready
+    yet is reported in the response's Skipped list, not as an error.
 
 func (c *Crawl) Start() error
     Start schedules the crawl on the Scrapfly API. Calling it twice returns
@@ -1768,6 +1941,45 @@ type CrawlContentsOptions struct {
 }
     CrawlContentsOptions configures a GET /crawl/{uuid}/contents request.
 
+type CrawlPromptHandler func(event CrawlerPromptEvent) error
+    CrawlPromptHandler receives each decoded frame of the prompt stream.
+    Returning a non-nil error stops consumption and is returned to the caller;
+    the connection is closed either way.
+
+type CrawlPromptOptions struct {
+	// Search overrides retrieval. Nil uses the server's defaults.
+	Search *CrawlSearchOptions
+	// Model names the generation model. Empty = server default.
+	Model string
+}
+    CrawlPromptOptions configures a prompt request.
+
+type CrawlRefreshSettings struct {
+	Enabled         *bool
+	IntervalSeconds *int
+}
+    CrawlRefreshSettings is the body of a PATCH /crawl/{uuid}/refresh call.
+
+    Both fields are pointers so that "leave alone" stays distinguishable from
+    "set to false" / "set to zero": turning a crawl off must keep its interval
+    for when it is turned back on.
+
+type CrawlSearchOptions struct {
+	// Limit caps the number of results, 1-50 (server cap). 0 = server default.
+	Limit int
+	// Mode selects the retrieval legs. Empty = server default (hybrid).
+	Mode CrawlerSearchMode
+	// Filters narrows the searched rows before each crawl's top-K, so a
+	// filter never costs recall. Keys: url_prefix, host, source_format,
+	// content_type, http_status, crawler_uuid. Unknown keys are rejected
+	// server-side rather than ignored.
+	Filters map[string]interface{}
+	// Cursor continues a previous response's ranking. Empty starts page 1.
+	Cursor string
+}
+    CrawlSearchOptions configures a crawl search request. The zero value is
+    valid: the server applies its own defaults for every unset field.
+
 type CrawlURLsOptions struct {
 	// Status filters by URL status. Empty = server default ("visited").
 	// Valid values: "visited", "pending", "failed", "skipped".
@@ -1854,7 +2066,30 @@ type CrawlerConfig struct {
 	ContentFormats  []CrawlerContentFormat `validate:"enum"`
 	ExtractionRules map[string]interface{}
 
-	// Web scraping features.
+	// Search index built while the crawl runs. Query it with CrawlSearch /
+	// CrawlPrompt once the index reaches READY.
+	Search bool
+
+	// Refresh keeps this crawl fresh: its own URLs are re-scraped in place on
+	// a period, under the same crawler UUID and the same artifacts. Only pages
+	// whose content changed are re-indexed and pages that disappeared are
+	// dropped.
+	Refresh bool
+	// RefreshInterval is the period in seconds, CrawlerRefreshMinInterval to
+	// CrawlerRefreshMaxInterval. Zero leaves the server default period.
+	RefreshInterval int
+
+	// Unblocker enables the anti-bot bypass (formerly "ASP").
+	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
+	// Serialized into the POST /crawl body under the "asp" key — the wire key
+	// is unchanged. See resolveUnblocker for the ASP/Unblocker precedence rule.
+	Unblocker *bool
+	// ASP enables Anti-Scraping Protection bypass.
+	//
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP       bool
 	ProxyPool string
 	Country   string
@@ -1870,10 +2105,10 @@ type CrawlerConfig struct {
     a hosted text file fetched at crawl start, no discovery). Other fields are
     optional and default to server-side values when zero-valued.
 
-    Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains) use *bool so
-    the SDK can distinguish "unset" from "explicit false". Setting a bool field
-    directly (e.g. UseSitemaps=true) is sent as-is; only the tri-state fields
-    need pointer semantics.
+    Tri-state fields (RespectRobotsTxt, FollowInternalSubdomains, Unblocker)
+    use *bool so the SDK can distinguish "unset" from "explicit false".
+    Setting a bool field directly (e.g. UseSitemaps=true) is sent as-is;
+    only the tri-state fields need pointer semantics.
 
 type CrawlerContentFormat string
     CrawlerContentFormat represents the content format to extract from crawled
@@ -1933,6 +2168,271 @@ type CrawlerLifecycleWebhook struct {
     crawler_cancelled, crawler_finished. Verified against the example JSONs in
     the docs.
 
+type CrawlerPromptDone struct {
+	SourcesUsed []int `json:"sources_used"`
+	// SourcesDropped counts retrieved chunks that did not fit the context
+	// window. They were ranked in but never shown to the model, so an answer
+	// with SourcesDropped > 0 saw less than retrieval found.
+	SourcesDropped int `json:"sources_dropped"`
+	// Truncated is true when the model hit its output cap. The answer is
+	// returned anyway; it is the caller's call whether to use it.
+	Truncated bool `json:"truncated"`
+}
+    CrawlerPromptUsage mirrors the model's token accounting.
+
+    CrawlerPromptDone is the terminal frame's payload.
+
+type CrawlerPromptEvent struct {
+	Type CrawlerPromptEventType
+	// Token holds the text delta for a token frame.
+	Token string
+	// Source is populated for a source frame.
+	Source CrawlerPromptSource
+	// Done is populated for the terminal frame.
+	Done CrawlerPromptDone
+	// Raw is the frame's undecoded data payload.
+	Raw []byte
+}
+    CrawlerPromptEvent is one decoded frame of the prompt stream. Exactly one of
+    the typed fields is populated, selected by Type.
+
+type CrawlerPromptEventType string
+    CrawlerPromptEventType names the SSE frames of POST /crawl/prompt.
+
+const (
+	CrawlerPromptEventSource CrawlerPromptEventType = "source"
+	CrawlerPromptEventToken  CrawlerPromptEventType = "token"
+	CrawlerPromptEventError  CrawlerPromptEventType = "error"
+	CrawlerPromptEventDone   CrawlerPromptEventType = "done"
+)
+    Prompt stream frames, in emission order: sources first, then tokens,
+    then exactly one done (or one error).
+
+type CrawlerPromptSource struct {
+	ID          int     `json:"id"`
+	CrawlerUUID string  `json:"crawler_uuid"`
+	URL         string  `json:"url"`
+	Title       string  `json:"title"`
+	Score       float64 `json:"score"`
+}
+    CrawlerPromptSource identifies one retrieved chunk the answer may cite.
+
+type CrawlerRefreshEntry struct {
+	At         string `json:"at"`
+	Generation int    `json:"generation"`
+	// Added are URLs this run discovered that the crawl did not hold; Updated
+	// are known URLs whose content fingerprint changed; Removed are known URLs
+	// that no longer exist and were dropped.
+	Added   int `json:"added"`
+	Updated int `json:"updated"`
+	Removed int `json:"removed"`
+	// Unchanged pages were re-scraped with an identical fingerprint. They cost
+	// no embedding and no index write.
+	Unchanged int `json:"unchanged"`
+	// Failed URLs keep the content they already had.
+	Failed        int      `json:"failed"`
+	DurationMs    int      `json:"duration_ms"`
+	SearchStatus  string   `json:"search_status,omitempty"`
+	Error         string   `json:"error,omitempty"`
+	SampleUpdated []string `json:"sample_updated,omitempty"`
+	SampleRemoved []string `json:"sample_removed,omitempty"`
+}
+    CrawlerRefreshEntry is one row of a crawl's refresh timeline.
+
+    SampleUpdated/SampleRemoved carry at most ten URLs each. The full lists are
+    never inlined: a 5,000-page crawl would otherwise put 5,000 strings into
+    every status poll.
+
+func (e *CrawlerRefreshEntry) Changed() int
+    Changed reports the pages this run actually touched. Zero means the site
+    stood still and the run cost no re-indexing.
+
+type CrawlerRefreshState struct {
+	Enabled         bool   `json:"enabled"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	Status          string `json:"status"`
+	// Generation counts completed refresh runs.
+	Generation int    `json:"generation"`
+	LastRunAt  string `json:"last_run_at,omitempty"`
+	// NextRunAt is empty while refresh is disabled.
+	NextRunAt string `json:"next_run_at,omitempty"`
+	// StartedAt is set only while a run is in flight, so it is the wall-clock
+	// answer to "how long has this been running", which LastRunAt cannot give.
+	StartedAt string `json:"started_at,omitempty"`
+	Error     string `json:"error,omitempty"`
+	// ConsecutiveFailures resets on the first run that succeeds. It is the
+	// signal that separates one flaky run from a schedule that has stopped
+	// working, which Status alone does not say.
+	ConsecutiveFailures int `json:"consecutive_failures"`
+	// History is newest-last and capped at the 50 most recent runs.
+	History []CrawlerRefreshEntry `json:"history,omitempty"`
+}
+    CrawlerRefreshState is a crawl's refresh block. It appears on GET
+    /crawl/{uuid}/status and is the answer of the three refresh calls.
+
+    One type serves both paths, and the two paths do not carry the same keys:
+    /status relays the engine's block verbatim, while the refresh calls
+    render the API's own typed state, which declares neither StartedAt nor
+    ConsecutiveFailures. Both therefore stay zero-valued on a refresh call and
+    must not be read as "the crawl has never run".
+
+func (r *CrawlerRefreshState) IsRunning() bool
+    IsRunning reports whether a refresh run is in flight right now.
+
+func (r *CrawlerRefreshState) LastRun() *CrawlerRefreshEntry
+    LastRun returns the most recent timeline row, nil before the first run.
+
+type CrawlerSearchCrawl struct {
+	CrawlerUUID string `json:"crawler_uuid"`
+	Documents   int    `json:"documents"`
+	Vectors     int    `json:"vectors"`
+	Index       string `json:"index"`
+}
+    CrawlerSearchCrawl is a crawl that was opened and searched.
+
+type CrawlerSearchMode string
+    CrawlerSearchMode selects which retrieval legs run.
+
+const (
+	CrawlerSearchModeVector CrawlerSearchMode = "vector"
+	CrawlerSearchModeFTS    CrawlerSearchMode = "fts"
+	CrawlerSearchModeHybrid CrawlerSearchMode = "hybrid"
+)
+    Search modes. Hybrid runs both legs and merges them with reciprocal rank
+    fusion; it is the server default when the field is omitted.
+
+func (m CrawlerSearchMode) IsValid() bool
+    IsValid returns true when the mode is one of the documented values.
+
+func (m CrawlerSearchMode) String() string
+    String returns the wire-format value.
+
+type CrawlerSearchResponse struct {
+	Query        string                 `json:"query"`
+	Mode         CrawlerSearchMode      `json:"mode"`
+	Limit        int                    `json:"limit"`
+	Completeness string                 `json:"completeness"`
+	Crawls       []CrawlerSearchCrawl   `json:"crawls"`
+	Skipped      []CrawlerSearchSkipped `json:"skipped"`
+	Results      []CrawlerSearchResult  `json:"results"`
+	Stats        CrawlerSearchStats     `json:"stats"`
+
+	CrawlsRequested   int `json:"crawls_requested"`
+	CrawlsSearched    int `json:"crawls_searched"`
+	CrawlsPrunedExact int `json:"crawls_pruned_exact"`
+	// CrawlsSkippedDeadline and CrawlsFailed name the crawls, they do not count
+	// them: a caller told "3 failed" has nothing to retry. Both are lists on
+	// the wire even when empty, so an int here is a hard unmarshal error that
+	// turns every real search response into a parse failure.
+	CrawlsSkippedDeadline []string               `json:"crawls_skipped_deadline"`
+	CrawlsFailed          []CrawlerSearchSkipped `json:"crawls_failed"`
+	// Theta is the fusion cutoff and MaxUBUnsearched the best score an unopened
+	// crawl could still hold. The bound only exists once a crawl has been
+	// opened, and nil is not the claim 0 makes.
+	Theta           *float64 `json:"theta"`
+	MaxUBUnsearched *float64 `json:"max_ub_unsearched"`
+
+	// Cursor pages the next slice. Paging is cursor-based: an offset over a
+	// partial fan-out would re-run the legs and shift ranks. Empty on the
+	// last page.
+	Cursor string `json:"cursor"`
+}
+    CrawlerSearchResponse wraps the JSON response of POST /crawl/search.
+
+    The envelope states its own completeness. Completeness "exact" with most
+    crawls unopened is the normal outcome: the fan-out proves via an admissible
+    bound that the unopened crawls held nothing better. "partial" means the
+    deadline cut the fan-out short.
+
+func (r *CrawlerSearchResponse) IsExact() bool
+    IsExact reports whether the ranking is provably complete for the requested
+    crawls.
+
+type CrawlerSearchResult struct {
+	Rank         int                 `json:"rank"`
+	Score        float64             `json:"score"`
+	Scores       CrawlerSearchScores `json:"scores"`
+	CrawlerUUID  string              `json:"crawler_uuid"`
+	URL          string              `json:"url"`
+	Title        string              `json:"title"`
+	SourceFormat string              `json:"source_format"`
+	ContentType  string              `json:"content_type"`
+	ChunkID      int                 `json:"chunk_id"`
+	Text         string              `json:"text"`
+	WARCOffset   *int64              `json:"warc_offset"`
+	WARCEnd      *int64              `json:"warc_end"`
+	ContentsURL  string              `json:"contents_url"`
+}
+    CrawlerSearchResult is one matched chunk.
+
+    A result is a chunk, not a page: ChunkID orders chunks within one crawled
+    document and Text is only the matched slice. Expand a hit back to the whole
+    document through ContentsURL, or through WARCOffset/WARCEnd against the
+    crawl's WARC artifact.
+
+    WARCOffset and WARCEnd are pointers because the index holds no byte range
+    for a chunk the crawl never wrote to WARC, and the engine sends null there.
+    Zero is a legal offset, so only nil can say the range is absent instead of
+    pointing a range read at the head of the artifact.
+
+type CrawlerSearchScores struct {
+	Vector *float64 `json:"vector"`
+	FTS    *float64 `json:"fts"`
+	RRF    float64  `json:"rrf"`
+}
+    CrawlerSearchScores holds the per-leg scores behind a result. Which fields
+    are populated depends on the mode.
+
+    Vector and FTS are pointers because a candidate found by only one leg has
+    no score from the other and the engine sends null there. Decoded into a
+    bare float64 that null becomes 0.0, which reads as "we scored it and it was
+    orthogonal" rather than "that leg never saw it". RRF is always present.
+
+type CrawlerSearchSkipped struct {
+	CrawlerUUID string `json:"crawler_uuid"`
+	Reason      string `json:"reason"`
+	Status      string `json:"status"`
+}
+    CrawlerSearchSkipped is a requested crawl that contributed nothing, and why.
+
+    A skip is never fatal: the search still answers from the remaining crawls.
+
+type CrawlerSearchState struct {
+	Status   string `json:"status"`
+	Manifest string `json:"manifest,omitempty"`
+	// Documents counts crawled pages represented in the index; Vectors counts
+	// the embedded chunks they were split into.
+	Documents int `json:"documents"`
+	Vectors   int `json:"vectors"`
+	Dropped   int `json:"dropped"`
+	// Fragments counts the index's on-disk data files. QueueDepth counts rows
+	// the writer accepted but has not flushed into one yet, so a nonzero
+	// QueueDepth on a terminal crawl means the index is still catching up.
+	Fragments  int    `json:"fragments"`
+	QueueDepth int    `json:"queue_depth"`
+	Error      string `json:"error,omitempty"`
+	BuiltAt    string `json:"built_at,omitempty"`
+	// Index is the vector index type (e.g. IVF_PQ), empty when the row count
+	// stayed below the index threshold.
+	Index string `json:"index,omitempty"`
+	// Generation is bumped when a paused crawl resumes and rebuilds. Results
+	// from different generations are not comparable.
+	Generation int `json:"generation,omitempty"`
+}
+    CrawlerSearchState describes a crawl's search index. It appears on GET
+    /crawl/{uuid}/status and on the two search webhooks.
+
+func (s *CrawlerSearchState) IsSearchable() bool
+    IsSearchable reports whether the index can answer a query right now.
+
+type CrawlerSearchStats struct {
+	DurationMS     int `json:"duration_ms"`
+	CrawlsSearched int `json:"crawls_searched"`
+	Candidates     int `json:"candidates"`
+	GCSGets        int `json:"gcs_gets"`
+}
+    CrawlerSearchStats holds the fan-out's timing and IO counters.
+
 type CrawlerStartResponse struct {
 	CrawlerUUID string `json:"crawler_uuid"`
 	Status      string `json:"status"`
@@ -1983,6 +2483,11 @@ type CrawlerStatus struct {
 	// IsComplete() / IsFailed() rather than checking the field directly.
 	IsSuccess *bool        `json:"is_success"`
 	State     CrawlerState `json:"state"`
+	// Search is nil unless the crawl was started with Search=true. Polling it
+	// is the webhook-free way to learn when the index became queryable.
+	Search *CrawlerSearchState `json:"search"`
+	// Refresh is nil unless the crawl re-scrapes itself on a period.
+	Refresh *CrawlerRefreshState `json:"refresh"`
 }
     CrawlerStatus wraps the JSON response of GET /crawl/{uuid}/status.
 
@@ -2082,6 +2587,34 @@ type CrawlerURLs struct {
     protocol carries no global total count. Use len(URLs) for the page size and
     request further pages by incrementing Page until an empty response.
 
+type CrawlerUpdatedWebhook struct {
+	Event   CrawlerWebhookEvent `json:"event"`
+	Payload struct {
+		CrawlerWebhookCommon
+		SeedURL string `json:"seed_url"`
+		// Refresh is the run as the refresh timeline records it, minus the
+		// sample lists: this event carries the URLs in Documents instead, at a
+		// higher cap.
+		Refresh   CrawlerRefreshEntry `json:"refresh"`
+		Documents struct {
+			// Updated holds the re-indexed URLs, added and changed alike.
+			// Which of the two a URL was only survives in the counts.
+			Updated []string `json:"updated"`
+			Removed []string `json:"removed"`
+			// Truncated reports that a list was cut at Scrapfly's 100-URL cap.
+			// The counts on Refresh still describe the whole run.
+			Truncated bool `json:"truncated"`
+		} `json:"documents"`
+		Links struct {
+			Status string `json:"status"`
+		} `json:"links"`
+	} `json:"payload"`
+}
+    CrawlerUpdatedWebhook is the payload for the crawler_updated event, emitted
+    once per auto-refresh run that changed at least one page. A run over a site
+    that stood still, and a run that failed outright, change nothing and are not
+    delivered, so receiving this event is by itself proof of a diff.
+
 type CrawlerWebhookCommon struct {
 	CrawlerUUID string       `json:"crawler_uuid"`
 	Project     string       `json:"project"`
@@ -2106,6 +2639,9 @@ const (
 	WebhookCrawlerStopped       CrawlerWebhookEvent = "crawler_stopped"
 	WebhookCrawlerCancelled     CrawlerWebhookEvent = "crawler_cancelled"
 	WebhookCrawlerFinished      CrawlerWebhookEvent = "crawler_finished"
+	WebhookCrawlerSearchReady   CrawlerWebhookEvent = "crawler_search_ready"
+	WebhookCrawlerSearchFailed  CrawlerWebhookEvent = "crawler_search_failed"
+	WebhookCrawlerUpdated       CrawlerWebhookEvent = "crawler_updated"
 )
     Crawler webhook event names.
 
@@ -2688,7 +3224,17 @@ type ScrapeConfig struct {
 	ProxyPool ProxyPool
 	// RenderJS enables JavaScript rendering using a headless browser.
 	RenderJS bool
+	// Unblocker enables the anti-bot bypass (formerly "ASP").
+	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
+	// Serialized as the "asp" query parameter — the wire key is unchanged.
+	// See resolveUnblocker for the ASP/Unblocker precedence rule.
+	Unblocker *bool
 	// ASP enables Anti-Scraping Protection bypass.
+	//
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
 	// Cache enables response caching.
 	Cache bool
@@ -2755,8 +3301,9 @@ type ScrapeConfig struct {
 	// Valid values: "chrome", "edge", "brave", "opera". Empty = default chrome.
 	// Invalid values are silently dropped by the server.
 	BrowserBrand string
-	// CostBudget limits the maximum API credit cost for ASP retries.
-	// ASP dynamically upgrades proxy/browser to bypass protection; this caps spending.
+	// CostBudget limits the maximum API credit cost for unblocker retries.
+	// The unblocker dynamically upgrades proxy/browser to bypass protection;
+	// this caps spending.
 	CostBudget int
 	// Geolocation spoofs the browser's geolocation. Format: "latitude,longitude".
 	Geolocation string
@@ -2777,12 +3324,12 @@ type ScrapeConfig struct {
     Example:
 
         config := &scrapfly.ScrapeConfig{
-            URL:      "https://example.com",
-            RenderJS: true,
-            Country:  "us",
-            ASP:      true,
-            Cache:    true,
-            Format:   scrapfly.FormatMarkdown,
+            URL:       "https://example.com",
+            RenderJS:  true,
+            Country:   "us",
+            Unblocker: scrapfly.BoolPtr(true),
+            Cache:     true,
+            Format:    scrapfly.FormatMarkdown,
         }
 
 type ScrapeResult struct {
@@ -3117,7 +3664,7 @@ type UnblockConfig struct {
 	Country        string `json:"country,omitempty"`
 	OS             string `json:"os,omitempty"`              // Fingerprint OS: linux, windows, macos, android, iphone, ipad
 	BrowserBrand   string `json:"browser_brand,omitempty"`   // Fingerprint browser brand: chrome, edge, brave, opera
-	Session        string `json:"session,omitempty"`         // Named session for reconnection — reuses an existing ASP session and disables auto-close
+	Session        string `json:"session,omitempty"`         // Named session for reconnection — reuses an existing unblocker session and disables auto-close
 	Timeout        int    `json:"timeout,omitempty"`         // Navigation timeout in seconds
 	BrowserTimeout int    `json:"browser_timeout,omitempty"` // Browser session timeout in seconds
 	EnableMCP      bool   `json:"enable_mcp,omitempty"`      // Enable MCP support in the browser
@@ -3338,7 +3885,7 @@ The final output is a base64 encoded string, ready to be used as the
     		URL: "https://example.com",
     		RenderJS: true,
     		Country: "us",
-    		ASP: true,
+    		Unblocker: scrapfly.BoolPtr(true),
     		ProxyPool: scrapfly.PublicResidentialPool,
     		JSScenario: sc,
     	}
