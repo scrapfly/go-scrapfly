@@ -1504,6 +1504,35 @@ func TestClient_CrawlsPrompt_ErrorFrameFailsMidStream(t *testing.T) {
 	}
 }
 
+func TestClient_CrawlsPrompt_RequiresDoneFrame(t *testing.T) {
+	for _, body := range []string{
+		"",
+		":keepalive\n\n",
+		"event: token\ndata: \"partial\"\n\n",
+		"event: token\ndata: \"partial\"\n\nevent: done\ndata: {}\n",
+	} {
+		t.Run(body, func(t *testing.T) {
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, body)
+			})
+			var answer strings.Builder
+			err := client.CrawlsPrompt([]string{"abc"}, "question", nil, func(ev CrawlerPromptEvent) error {
+				if ev.Type == CrawlerPromptEventToken {
+					answer.WriteString(ev.Token)
+				}
+				return nil
+			})
+			if !errors.Is(err, ErrCrawlerFailed) || !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Errorf("expected crawler failure wrapping unexpected EOF, got %v", err)
+			}
+			if strings.Contains(body, "partial") && answer.String() != "partial" {
+				t.Errorf("lost tokens delivered before EOF: %q", answer.String())
+			}
+		})
+	}
+}
+
 func TestClient_CrawlsPrompt_HandlerErrorStopsStream(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

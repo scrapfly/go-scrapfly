@@ -717,6 +717,7 @@ func (c *Client) promptHTTPClient() *http.Client {
 // Only `event:` and `data:` lines matter; `:keepalive` comment frames exist
 // to keep intermediaries from closing an idle connection and carry nothing.
 // Token payloads are JSON strings; every other frame is a JSON object.
+// A complete done frame terminates the stream; EOF before it is a failure.
 func consumeCrawlerPromptStream(body io.Reader, handler CrawlPromptHandler) error {
 	scanner := bufio.NewScanner(body)
 	// A single chunk of retrieved context can exceed bufio's 64 KiB default.
@@ -746,6 +747,9 @@ func consumeCrawlerPromptStream(body io.Reader, handler CrawlPromptHandler) erro
 				if err != nil {
 					return err
 				}
+				if eventName == string(CrawlerPromptEventDone) {
+					return nil
+				}
 			}
 			eventName, data = "", nil
 			continue
@@ -762,7 +766,7 @@ func consumeCrawlerPromptStream(body io.Reader, handler CrawlPromptHandler) erro
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to read prompt stream: %w", err)
 	}
-	return nil
+	return fmt.Errorf("%w: prompt stream ended before the done frame: %w", ErrCrawlerFailed, io.ErrUnexpectedEOF)
 }
 
 // handleCrawlerPromptFrame decodes one frame's payload and forwards it.
