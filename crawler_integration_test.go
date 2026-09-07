@@ -6,7 +6,7 @@
 // during a normal `go test` invocation. To run them, supply a key and
 // explicitly opt in:
 //
-//	export SCRAPFLY_API_KEY=scp-live-YOUR_API_KEY_HERE
+//	export SCRAPFLY_API_KEY=...
 //	go test -tags=integration -timeout=300s -run TestIntegrationCrawler ./...
 //
 // SCRAPFLY_API_HOST overrides the API endpoint. Set SCRAPFLY_INSECURE_TLS=1

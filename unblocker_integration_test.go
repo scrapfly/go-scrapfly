@@ -9,7 +9,7 @@
 // gap by driving both names through the real client to a real server and
 // reading the answer back off the response envelope.
 //
-//	export SCRAPFLY_API_KEY=scp-live-YOUR_API_KEY_HERE
+//	export SCRAPFLY_API_KEY=...
 //	export SCRAPFLY_API_HOST=https://api.scrapfly.io
 //	go test -tags=integration -count=1 -timeout=600s -run TestIntegrationUnblockerAliasMatrix -v .
 //
