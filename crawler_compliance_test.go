@@ -130,10 +130,10 @@ func hitCount(report complianceReport, trapName string) int {
 	return 0
 }
 
-// boolPtr is a tiny helper for the *bool tri-state CrawlerConfig fields.
-func boolPtr(b bool) *bool {
-	return &b
-}
+// boolPtr, the helper for the *bool tri-state CrawlerConfig fields, lives in
+// config_scrape_sticky_test.go. That file carries no build tag, so it compiles
+// into both the default and the `integration` builds; re-declaring the helper
+// here broke the `-tags integration` build of the whole package.
 
 // runCompliance runs a small crawl synchronously against the target trap
 // app and returns the completed Crawl. All compliance tests use the same
