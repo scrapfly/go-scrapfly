@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// AlertState is the lifecycle state of an alert definition. Mirrors the
-// AlertState enum in scrapfly-api/pkg/alert/model.go.
+// AlertState is the lifecycle state of an alert definition. These are the
+// only states the API reports.
 type AlertState string
 
 const (
@@ -24,9 +24,9 @@ const (
 	AlertStateSnoozed    AlertState = "snoozed"
 )
 
-// AlertComparator is the threshold comparison operator. Mirrors the
-// Comparator enum in scrapfly-api/pkg/alert/model.go. The API rejects
-// any other string with ERR::ALERT::INVALID_THRESHOLD.
+// AlertComparator is the threshold comparison operator. These are the only
+// operators the API accepts; it rejects any other string with
+// ERR::ALERT::INVALID_THRESHOLD.
 type AlertComparator string
 
 const (
@@ -292,9 +292,8 @@ type AlertDeleteResult struct {
 	Deleted string `json:"deleted"`
 }
 
-// ValidateAlertCreate runs the same checks the API performs server-side
-// (scrapfly-api/pkg/alert/validate.go). Use it to fail fast before the
-// network round-trip. It does NOT validate that the MetricID exists in
+// ValidateAlertCreate runs the same checks the API performs server-side.
+// Use it to fail fast before the network round-trip. It does NOT validate that the MetricID exists in
 // the registry — for that, call ListAlertMetricFamilies first.
 //
 // Returns nil on success or an error whose Error() string is the same

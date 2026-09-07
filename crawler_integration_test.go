@@ -3,17 +3,16 @@
 // Integration tests for the Crawler API against a real Scrapfly server.
 //
 // These tests are gated behind the `integration` build tag so they don't run
-// during a normal `go test` invocation. To run them, point at a live cluster
-// and explicitly opt in:
+// during a normal `go test` invocation. To run them, supply a key and
+// explicitly opt in:
 //
 //	export SCRAPFLY_API_KEY=scp-live-YOUR_API_KEY_HERE
-//	export SCRAPFLY_API_HOST=https://api.scrapfly.local
 //	go test -tags=integration -timeout=300s -run TestIntegrationCrawler ./...
 //
-// The `api.scrapfly.local` host uses a self-signed TLS certificate, so this
-// test file calls NewWithHost(key, host, false) — the third arg disables SSL
-// verification for the duration of the test run. Do NOT use verifySSL=false
-// against production hosts.
+// SCRAPFLY_API_HOST overrides the API endpoint. Set SCRAPFLY_INSECURE_TLS=1
+// only when that endpoint serves a certificate the system store cannot verify;
+// it disables SSL verification for the whole run, so never set it against a
+// production host.
 
 package scrapfly
 
@@ -31,10 +30,10 @@ func integrationClient(t *testing.T) *Client {
 	}
 	host := os.Getenv("SCRAPFLY_API_HOST")
 	if host == "" {
-		host = "https://api.scrapfly.local"
+		host = "https://api.scrapfly.io"
 	}
-	// verifySSL=false because api.scrapfly.local uses a self-signed cert in dev.
-	client, err := NewWithHost(key, host, false)
+	verifySSL := os.Getenv("SCRAPFLY_INSECURE_TLS") != "1"
+	client, err := NewWithHost(key, host, verifySSL)
 	if err != nil {
 		t.Fatal(err)
 	}

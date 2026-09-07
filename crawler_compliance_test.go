@@ -22,15 +22,14 @@
 //
 // Required env vars:
 //
-//	SCRAPFLY_API_KEY        Dev API key (e.g. scp-live-...)
-//	SCRAPFLY_API_HOST       Local Scrapfly API (default: https://api.scrapfly.local)
+//	SCRAPFLY_API_KEY        API key (e.g. scp-live-...)
+//	SCRAPFLY_API_HOST       API endpoint (default: https://api.scrapfly.io)
 //
 // Optional:
 //
 //	WEB_SCRAPING_DEV_BASE   Trap app base URL.
-//	                        Default: https://web-scraping.dev (public prod).
-//	                        Override to https://web-scraping-dev.local for the
-//	                        local self-hosted dev cluster.
+//	                        Default: https://web-scraping.dev.
+//	                        Override to point at your own deployment of it.
 //
 // Run:
 //
@@ -60,8 +59,9 @@ func complianceTargetBase() string {
 	return "https://web-scraping.dev"
 }
 
-// trapHTTPClient returns an http.Client that skips TLS verification — the
-// local self-hosted dev cluster ingress certs are self-signed. Do NOT use this against prod.
+// trapHTTPClient returns an http.Client that skips TLS verification, so the
+// trap app can also be a self-hosted deployment serving its own certificate.
+// It talks to the trap app only, never to the Scrapfly API.
 func trapHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 15 * time.Second,

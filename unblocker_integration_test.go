@@ -10,7 +10,7 @@
 // reading the answer back off the response envelope.
 //
 //	export SCRAPFLY_API_KEY=scp-live-YOUR_API_KEY_HERE
-//	export SCRAPFLY_API_HOST=https://api.scrapfly.home
+//	export SCRAPFLY_API_HOST=https://api.scrapfly.io
 //	go test -tags=integration -count=1 -timeout=600s -run TestIntegrationUnblockerAliasMatrix -v .
 //
 // # -count=1 is not optional
@@ -32,11 +32,8 @@
 // It does NOT prove the API still honours the `unblocker` SPELLING, because no
 // SDK leg ever sends it.
 //
-// That spelling is a real, separately deployed code path — see
-// apps/scrapfly/api/scrapfly-api/pkg/scraper/config.go:
-//
-//	asp := queryParams.Get("asp")
-//	if asp == "" { asp = queryParams.Get("unblocker") }
+// That spelling is a separate code path in the API itself: it reads the `asp`
+// query parameter first and falls back to `unblocker` when `asp` is absent.
 //
 // It is what a customer on a raw HTTP client depends on, and the API silently
 // ignores query params it does not recognise, so deleting it would make
@@ -53,9 +50,7 @@
 // means the client cannot tell the real API from anything else holding the
 // socket. For a suite whose whole output is "what the API answered", that is
 // the wrong footing. aliasIntegrationClient below keeps verification ON and
-// trusts the dev root explicitly (SCRAPFLY_CA_BUNDLE, else the well-known dev
-// path, else the system store — which on a provisioned dev box already carries
-// the Scrapfly Dev Root CA).
+// trusts the system store, plus any extra root named by SCRAPFLY_CA_BUNDLE.
 //
 // # Cost, measured rather than assumed
 //
@@ -97,17 +92,12 @@ import (
 // unblockerIntegrationTarget is small, stable and cheap to fetch.
 const unblockerIntegrationTarget = "https://httpbin.dev/html"
 
-// devRootCA is where the local dev environment installs the root that signs
-// *.scrapfly.home. Overridden by SCRAPFLY_CA_BUNDLE.
-const devRootCA = "/usr/local/share/ca-certificates/scrapfly-local-ca.crt"
-
 // legPacing separates the legs.
 //
-// The dev project carries a user-defined throttler on the target host
-// (name "httpbin", host httpbin.dev, algorithm SLIDING_WINDOW, max_rate 5,
-// max_concurrency 5), reported back on every response under
-// context.throttler. Five legs do not fit inside a 5-wide window unless they
-// are spread out, and the window does not clear the instant a scrape returns —
+// A project with a throttler configured on the target host reports it back on
+// every response under context.throttler. Five legs do not fit inside a
+// 5-wide window unless they are spread out, and the window does not clear the
+// instant a scrape returns —
 // so unpaced back-to-back legs trip ERR::THROTTLE::MAX_CONCURRENT_REQUEST_EXCEEDED
 // even though the legs are strictly sequential. Pacing keeps the matrix
 // observable; it changes no assertion.
@@ -164,11 +154,10 @@ func (rt *recordingTransport) count() int {
 // outbound attempt recorded. It skips (never fails) when either gating
 // variable is missing.
 //
-// Both variables are required. There is deliberately no default host: the only
-// candidates are wrong in opposite directions — a placeholder like
-// api.scrapfly.local does not resolve, so a developer who exported only the
-// key gets a wall of red that reads like an alias regression, and
-// api.scrapfly.io would point a dev key at production.
+// Both variables are required. There is deliberately no default host: a
+// resolvable default would silently point whatever key is exported at
+// whichever endpoint the default names, and a non-resolvable one turns a
+// missing variable into a wall of red that reads like an alias regression.
 func aliasIntegrationClient(t *testing.T) (*Client, *recordingTransport, string) {
 	t.Helper()
 
@@ -190,11 +179,6 @@ func aliasIntegrationClient(t *testing.T) (*Client, *recordingTransport, string)
 	tlsNote := "verification ON, system trust store"
 
 	bundle := os.Getenv("SCRAPFLY_CA_BUNDLE")
-	if bundle == "" {
-		if _, statErr := os.Stat(devRootCA); statErr == nil {
-			bundle = devRootCA
-		}
-	}
 	if bundle != "" {
 		pem, readErr := os.ReadFile(bundle)
 		if readErr != nil {

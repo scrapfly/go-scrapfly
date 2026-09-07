@@ -363,10 +363,10 @@ func ProjectSalt(apiKey string) string
     where the salt is also the VNC password prefix (<salt>-<password>).
 
 func ValidateAlertCreate(req AlertCreateRequest) error
-    ValidateAlertCreate runs the same checks the API performs server-side
-    (scrapfly-api/pkg/alert/validate.go). Use it to fail fast before the network
-    round-trip. It does NOT validate that the MetricID exists in the registry —
-    for that, call ListAlertMetricFamilies first.
+    ValidateAlertCreate runs the same checks the API performs server-side.
+    Use it to fail fast before the network round-trip. It does NOT validate that
+    the MetricID exists in the registry — for that, call ListAlertMetricFamilies
+    first.
 
     Returns nil on success or an error whose Error() string is the same shape
     the API would have returned (ERR::ALERT::* prefix + reason).
@@ -488,9 +488,9 @@ type Alert struct {
     configure your webhook verifier.
 
 type AlertComparator string
-    AlertComparator is the threshold comparison operator. Mirrors the Comparator
-    enum in scrapfly-api/pkg/alert/model.go. The API rejects any other string
-    with ERR::ALERT::INVALID_THRESHOLD.
+    AlertComparator is the threshold comparison operator. These are the
+    only operators the API accepts; it rejects any other string with
+    ERR::ALERT::INVALID_THRESHOLD.
 
 const (
 	AlertComparatorGt  AlertComparator = "gt"
@@ -670,8 +670,8 @@ type AlertSnoozeRequest struct {
     transition. Exactly one MUST be provided.
 
 type AlertState string
-    AlertState is the lifecycle state of an alert definition. Mirrors the
-    AlertState enum in scrapfly-api/pkg/alert/model.go.
+    AlertState is the lifecycle state of an alert definition. These are the only
+    states the API reports.
 
 const (
 	AlertStateOK         AlertState = "ok"
@@ -1186,8 +1186,22 @@ func (c *Client) CreateAlert(req AlertCreateRequest) (*Alert, error)
     round-trip per bad payload.
 
 func (c *Client) CreateCrawlerSchedule(crawlerConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+    CreateCrawlerSchedule creates a Crawler API schedule.
+
+    crawlerConfig is forwarded verbatim and its keys are WIRE keys, not the
+    CrawlerConfig field names. As with CreateScrapeSchedule, the anti-bot bypass
+    may be spelled "asp" or "unblocker": the API folds the alias into "asp" on
+    the stored config before it is ever replayed.
 
 func (c *Client) CreateScrapeSchedule(scrapeConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
+    CreateScrapeSchedule creates a Web Scraping API schedule.
+
+    scrapeConfig is forwarded to the API verbatim, so its keys are WIRE keys
+    and not the ScrapeConfig field names — e.g. "render_js", not "RenderJS". The
+    anti-bot bypass may be spelled either way here: the API folds "unblocker"
+    into "asp" on the STORED config, with the same precedence the SDK uses
+    (a supplied "asp" wins; "unblocker" is read only when "asp" is absent,
+    null or ""), so both names reach the replayed scrape.
 
 func (c *Client) CreateScreenshotSchedule(screenshotConfig map[string]interface{}, req *CreateScheduleRequest) (*Schedule, error)
 
@@ -2082,7 +2096,18 @@ type CrawlerConfig struct {
 	// Unblocker enables the anti-bot bypass (formerly "ASP").
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized into the POST /crawl body under the "asp" key — the wire key
-	// is unchanged. See resolveUnblocker for the ASP/Unblocker precedence rule.
+	// is unchanged.
+	// See resolveUnblocker for the ASP/Unblocker precedence rule.
+	//
+	// The two names are two INDEPENDENT fields, not an aliased pair: writing
+	// one never updates the other, so reading Unblocker after setting ASP
+	// returns nil, and ASP: true wins no matter which was written last. To turn
+	// the feature off, clear ASP — setting Unblocker to BoolPtr(false) does not
+	// override an ASP: true. Use UnblockerEnabled to read what will actually go
+	// on the wire. The other Scrapfly SDKs expose one storage slot behind two
+	// names, so this and the ASP: false + Unblocker: BoolPtr(true) row are the
+	// two places Go answers differently; both follow from ASP being a plain
+	// bool, which cannot be retyped without breaking every existing caller.
 	Unblocker *bool
 	// ASP enables Anti-Scraping Protection bypass.
 	//
@@ -2109,6 +2134,10 @@ type CrawlerConfig struct {
     use *bool so the SDK can distinguish "unset" from "explicit false".
     Setting a bool field directly (e.g. UseSitemaps=true) is sent as-is;
     only the tri-state fields need pointer semantics.
+
+func (c *CrawlerConfig) UnblockerEnabled() bool
+    UnblockerEnabled reports whether the anti-bot bypass will be requested for
+    this crawl. See ScrapeConfig.UnblockerEnabled.
 
 type CrawlerContentFormat string
     CrawlerContentFormat represents the content format to extract from crawled
@@ -2177,10 +2206,15 @@ type CrawlerPromptDone struct {
 	// Truncated is true when the model hit its output cap. The answer is
 	// returned anyway; it is the caller's call whether to use it.
 	Truncated bool `json:"truncated"`
+	// APICredit is what the engine actually charged, which is not always the
+	// list price: a run that produced no answer bills zero. Nil means an engine
+	// too old to report it, so fall back to the flat price rather than to zero.
+	APICredit *int `json:"api_credit,omitempty"`
 }
-    CrawlerPromptUsage mirrors the model's token accounting.
-
-    CrawlerPromptDone is the terminal frame's payload.
+    CrawlerPromptDone is the terminal frame's payload. Token counts and the
+    model id are deliberately absent: the API withholds them from customers
+    because they would expose our margin, and the price is the flat APICredit
+    below.
 
 type CrawlerPromptEvent struct {
 	Type CrawlerPromptEventType
@@ -3228,6 +3262,16 @@ type ScrapeConfig struct {
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized as the "asp" query parameter — the wire key is unchanged.
 	// See resolveUnblocker for the ASP/Unblocker precedence rule.
+	//
+	// The two names are two INDEPENDENT fields, not an aliased pair: writing
+	// one never updates the other, so reading Unblocker after setting ASP
+	// returns nil, and ASP: true wins no matter which was written last. To turn
+	// the feature off, clear ASP — setting Unblocker to BoolPtr(false) does not
+	// override an ASP: true. Use UnblockerEnabled to read what will actually go
+	// on the wire. The other Scrapfly SDKs expose one storage slot behind two
+	// names, so this and the ASP: false + Unblocker: BoolPtr(true) row are the
+	// two places Go answers differently; both follow from ASP being a plain
+	// bool, which cannot be retyped without breaking every existing caller.
 	Unblocker *bool
 	// ASP enables Anti-Scraping Protection bypass.
 	//
@@ -3331,6 +3375,18 @@ type ScrapeConfig struct {
             Cache:     true,
             Format:    scrapfly.FormatMarkdown,
         }
+
+func (c *ScrapeConfig) UnblockerEnabled() bool
+    UnblockerEnabled reports whether the anti-bot bypass will be requested — the
+    single resolved value that reaches the wire as "asp".
+
+    It exists because ASP and Unblocker are two independent exported fields
+    rather than one slot behind two names. Without it there is no way to read
+    back what a config will actually do: `cfg.Unblocker` is nil after `cfg.ASP
+    = true`, and `cfg.ASP` is false after `cfg.Unblocker = BoolPtr(true)`.
+    The Python, TypeScript and Rust SDKs all expose the resolved value
+    under both names; this is Go's equivalent read surface (Rust spells it
+    `unblocker_enabled()`).
 
 type ScrapeResult struct {
 	// Config contains the configuration used for this scrape request.
