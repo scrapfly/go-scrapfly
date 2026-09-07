@@ -1,5 +1,5 @@
 # Scrapfly Go SDK — release/dev Makefile.
-# Target names mirror sdk/python & sdk/rust Makefiles for muscle-memory parity.
+# Target names mirror the other Scrapfly SDK Makefiles for muscle-memory parity.
 # Go modules are tag-published (no registry), so `release` = test + tag + push.
 
 VERSION ?=
@@ -20,7 +20,7 @@ dev:
 
 bump:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make bump VERSION=x.y.z"; exit 2; fi
-	@# No in-repo version constant for sdk/go; the module version IS the git tag.
+	@# No in-repo version constant here; the module version IS the git tag.
 	@# We still create a bump commit so the release loop stays uniform across SDKs.
 	git commit --allow-empty -m "bump version to $(VERSION)"
 	git push

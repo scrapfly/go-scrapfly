@@ -12,13 +12,8 @@
 // nofollow, sitemap index, etc). Each route records hits in an
 // in-memory store. This test file asserts hit counts after each crawl.
 //
-// Server-side catalog:
-//
-//	apps/web-scraping-dev/website/app/web/CRAWLER_TEST_SUITE.md
-//
-// SDK brief:
-//
-//	sdk/CRAWLER_COMPLIANCE_TEST_BRIEF.md
+// The trap catalog is published by the trap app itself; this file asserts the
+// crawler's observable behaviour against it.
 //
 // Required env vars:
 //

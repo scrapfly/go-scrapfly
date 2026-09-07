@@ -479,8 +479,8 @@ type Alert struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
-    Alert is the full row mirror of alert_definition. Pointer fields map
-    to nullable SQL columns — nil means "never set" for last_notified_at,
+    Alert is the full alert definition as the API returns it. Pointer fields
+    are nullable in the response — nil means "never set" for last_notified_at,
     last_evaluated_at, last_metric_value, snoozed_until, schedule_uuid.
 
     HmacKey is the per-alert HMAC-SHA256 signing secret used to authenticate
@@ -575,7 +575,7 @@ type AlertMetricFamily struct {
     issuing CreateAlert.
 
 type AlertNoDataPolicy string
-    AlertNoDataPolicy controls what to do when the underlying ClickHouse rollup
+    AlertNoDataPolicy controls what to do when the underlying metrics rollup
     returns no rows in the evaluation window. Mirrors NoDataPolicy in the API.
 
 const (
@@ -1550,11 +1550,11 @@ type CloudBrowserConfig struct {
 	// See https://scrapfly.io/docs/cloud-browser-api/byop for details.
 	BYOPProxy string `json:"byop_proxy,omitempty"`
 
-	// EnableMCP enables Scrapium's built-in Model Context Protocol (MCP) support.
+	// EnableMCP enables the Cloud Browser's built-in Model Context Protocol (MCP) support.
 	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
 	EnableMCP bool `json:"enable_mcp,omitempty"`
 
-	// SolveCaptcha arms Scrapium's built-in captcha detector + solver on the
+	// SolveCaptcha arms the Cloud Browser's built-in captcha detector + solver on the
 	// first page attach. Turnstile, DataDome slider, reCAPTCHA, GeeTest,
 	// PerimeterX hold, and puzzle-click captchas are handled automatically —
 	// no extra CDP calls from the client.
@@ -2212,8 +2212,8 @@ type CrawlerPromptDone struct {
 	APICredit *int `json:"api_credit,omitempty"`
 }
     CrawlerPromptDone is the terminal frame's payload. Token counts and the
-    model id are deliberately absent: the API withholds them from customers
-    because they would expose our margin, and the price is the flat APICredit
+    model id are deliberately absent: the API does not contract them, so the SDK
+    drops them if an older engine sends them. The charge is the flat APICredit
     below.
 
 type CrawlerPromptEvent struct {

@@ -1639,7 +1639,7 @@ func TestParseCrawlerStatus_SearchBlockCarriesTheWriterBacklog(t *testing.T) {
 	if status.Search.QueueDepth != 17 || status.Search.Fragments != 3 {
 		t.Errorf("search backlog: %+v", status.Search)
 	}
-	// Which model we embed with is not the customer's business.
+	// The status block must not surface the embedding model to callers.
 	if strings.Contains(fmt.Sprintf("%+v", status.Search), "gemini") {
 		t.Errorf("status leaks the embedding model: %+v", status.Search)
 	}

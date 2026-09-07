@@ -224,7 +224,7 @@ const (
 	HttpMethodHead    HttpMethod = http.MethodHead
 	//HttpMethodConnect HttpMethod = http.MethodConnect 404 on scrape endpoint
 	//HttpMethodTrace HttpMethod = http.MethodTrace 404 on scrape endpoint
-	//HttpMethodDelete HttpMethod = http.MethodDelete NOT in AllowedMethods (pkg/scraper/typesets_scraper.go): GET, POST, PUT, PATCH, OPTIONS, HEAD only
+	//HttpMethodDelete HttpMethod = http.MethodDelete rejected by the scrape endpoint; it allows GET, POST, PUT, PATCH, OPTIONS, HEAD only
 )
 
 func (f HttpMethod) Enum() []HttpMethod {

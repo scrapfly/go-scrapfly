@@ -399,8 +399,8 @@ type CrawlerPromptSource struct {
 }
 
 // CrawlerPromptDone is the terminal frame's payload. Token counts and the model
-// id are deliberately absent: the API withholds them from customers because they
-// would expose our margin, and the price is the flat APICredit below.
+// id are deliberately absent: the API does not contract them, so the SDK drops
+// them if an older engine sends them. The charge is the flat APICredit below.
 type CrawlerPromptDone struct {
 	SourcesUsed []int `json:"sources_used"`
 	// SourcesDropped counts retrieved chunks that did not fit the context

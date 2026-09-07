@@ -77,11 +77,11 @@ type CloudBrowserConfig struct {
 	// See https://scrapfly.io/docs/cloud-browser-api/byop for details.
 	BYOPProxy string `json:"byop_proxy,omitempty"`
 
-	// EnableMCP enables Scrapium's built-in Model Context Protocol (MCP) support.
+	// EnableMCP enables the Cloud Browser's built-in Model Context Protocol (MCP) support.
 	// When true, the browser exposes a streamable-HTTP MCP endpoint for AI agents.
 	EnableMCP bool `json:"enable_mcp,omitempty"`
 
-	// SolveCaptcha arms Scrapium's built-in captcha detector + solver on the
+	// SolveCaptcha arms the Cloud Browser's built-in captcha detector + solver on the
 	// first page attach. Turnstile, DataDome slider, reCAPTCHA, GeeTest,
 	// PerimeterX hold, and puzzle-click captchas are handled automatically —
 	// no extra CDP calls from the client.
@@ -273,7 +273,7 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 
 	// Normalize `host` to a wss:// URL regardless of the scheme the caller
 	// configured. Accepted input schemes: https:// (default), wss://, ws://,
-	// http:// (dev stacks). Dev stacks on .home use ws:// since they don't
+	// http:// (self-hosted stacks). An http:// host maps to ws://, for stacks that do not
 	// carry a real TLS cert on the browser service.
 	hostNoScheme := host
 	var wsScheme string

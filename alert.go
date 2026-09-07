@@ -38,7 +38,7 @@ const (
 	AlertComparatorNeq AlertComparator = "neq"
 )
 
-// AlertNoDataPolicy controls what to do when the underlying ClickHouse
+// AlertNoDataPolicy controls what to do when the underlying metrics
 // rollup returns no rows in the evaluation window. Mirrors NoDataPolicy
 // in the API.
 type AlertNoDataPolicy string
@@ -68,8 +68,8 @@ type AlertNotifyChannel struct {
 	Opts   map[string]string `json:"opts,omitempty"`
 }
 
-// Alert is the full row mirror of alert_definition. Pointer fields map
-// to nullable SQL columns — nil means "never set" for last_notified_at,
+// Alert is the full alert definition as the API returns it. Pointer fields
+// are nullable in the response — nil means "never set" for last_notified_at,
 // last_evaluated_at, last_metric_value, snoozed_until, schedule_uuid.
 //
 // HmacKey is the per-alert HMAC-SHA256 signing secret used to authenticate

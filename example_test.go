@@ -142,9 +142,9 @@ func Example_basicGet() {
 	cookiesJSON, _ := json.MarshalIndent(scrapeResult.Result.Cookies, "", "  ")
 	fmt.Println(string(cookiesJSON))
 	// Output: scrapfly: 2025/10/26 05:39:16 [DEBUG] scraping url https://httpbin.dev/html
-	// scrapfly: 2025/10/26 05:39:19 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/01K8FGECZ0FDFSQ3W11V0M1MMG
+	// scrapfly: 2025/10/26 05:39:19 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// web log url:
-	// https://scrapfly.io/dashboard/monitoring/log/01K8FGECZ0FDFSQ3W11V0M1MMG
+	// https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// page content:
 	// <!DOCTYPE html>
 	// <html>
@@ -418,9 +418,9 @@ func Example_jsRender() {
 	browserDataJSON, _ := json.MarshalIndent(scrapeResult.Result.BrowserData, "", "  ")
 	fmt.Println(string(browserDataJSON))
 	// Output: scrapfly: 2025/10/26 05:39:19 [DEBUG] scraping url https://web-scraping.dev/product/1
-	// scrapfly: 2025/10/26 05:39:34 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/01K8FGEG1NB3RJ183CJ27YD25N
+	// scrapfly: 2025/10/26 05:39:34 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// web log url:
-	// https://scrapfly.io/dashboard/monitoring/log/01K8FGEG1NB3RJ183CJ27YD25N
+	// https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	//
 	// page content (first 1000 chars):
 	// <html lang="en"><head>
@@ -1062,7 +1062,7 @@ func Example_extractionTemplates() {
 	templateResultJSON, _ := json.MarshalIndent(templateResult, "", "  ")
 	fmt.Println(string(templateResultJSON))
 	// Output: scrapfly: 2025/10/26 05:40:28 [DEBUG] scraping url https://web-scraping.dev/reviews
-	// scrapfly: 2025/10/26 05:40:35 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/01K8FGGJX0AY63MHW2ACEY4ZFZ
+	// scrapfly: 2025/10/26 05:40:35 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// template extract:
 	// {
 	//   "data": {
