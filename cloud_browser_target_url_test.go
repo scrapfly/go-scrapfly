@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// target_url is what lets the server pick a proxy that serves the destination.
-// A session that omits it is routed blind, and an upstream provider refusing the
-// target fails the whole run at CONNECT time, so the parameter has to survive
-// onto the wire rather than merely being stored on the config.
+// target_url is what lets the server route the session to a proxy that serves
+// the destination, and routing is decided once when the session opens, so the
+// parameter has to survive onto the wire rather than merely being stored on the
+// config.
 func TestCloudBrowserSendsTargetURL(t *testing.T) {
 	client := &Client{key: "scp-test-key"}
 
