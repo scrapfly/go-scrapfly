@@ -1077,6 +1077,20 @@ func (c *Client) CloudBrowserVaultItemDelete(vaultID, itemID string) (map[string
 // only.
 // ----------------------------------------------------------------------
 
+// CloudBrowserLinkedService is the provider discriminator of a linked vault.
+// The server keys its decoder on these values; anything else is refused with
+// 400 and never stored.
+type CloudBrowserLinkedService string
+
+const (
+	// LinkedServiceOnePassword is the only provider the server registers today.
+	LinkedServiceOnePassword CloudBrowserLinkedService = "1password"
+	// LinkedServiceUnset is accepted only by CloudBrowserVaultServiceTest, where
+	// the server picks the provider for a candidate-token probe. POST /service
+	// has no default and rejects it.
+	LinkedServiceUnset CloudBrowserLinkedService = ""
+)
+
 // vaultServiceDataWire copies a linked_service_data document without
 // token_item_id. The server binds the id of the blob item it seals the
 // token into and ignores whatever the body carries on both POST and
@@ -1095,8 +1109,8 @@ func vaultServiceDataWire(data map[string]interface{}) map[string]interface{} {
 }
 
 // CloudBrowserVaultServiceLink links a manual vault to an external secret
-// manager and turns it into a mirror. linkedService is the provider
-// discriminator — "1password" is the only one today.
+// manager and turns it into a mirror. linkedService is required: this route
+// has no server-side default, so LinkedServiceUnset is rejected.
 //
 // serviceData carries the non-secret selection rules; vault_id or
 // vault_name is required, the rest are optional:
@@ -1117,7 +1131,7 @@ func vaultServiceDataWire(data map[string]interface{}) map[string]interface{} {
 //
 // A vault that is already linked, or that still holds rows owned by a
 // service, is refused (409).
-func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey, linkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error) {
+func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey string, linkedService CloudBrowserLinkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error) {
 	host := c.cloudBrowserRESTHost()
 	reqURL := fmt.Sprintf("%s/vault/%s/service?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
 
@@ -1165,8 +1179,8 @@ func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey, linkedService, 
 // secret rotation. For a metadata-only update pass both as "" and no
 // X-Vault-Key header is sent.
 //
-// linkedService is not a parameter: this route reads only the token and
-// the selection document, so a link's provider cannot be switched in
+// linkedService is not a parameter: the server re-decodes against the
+// vault's stored discriminator, so a link's provider cannot be switched in
 // place — unlink and link again.
 func (c *Client) CloudBrowserVaultServiceUpdate(vaultID, vaultKey, token string, serviceData map[string]interface{}) (map[string]interface{}, error) {
 	host := c.cloudBrowserRESTHost()
@@ -1291,22 +1305,23 @@ func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[str
 //
 // linkedService and token are both optional. Pass a candidate token to
 // probe before a link exists — the probe then ignores the stored
-// selection rules and reports every vault the token can reach. Pass both
-// as "" to probe with the token already sealed in the vault, which
-// therefore has to be linked. vaultKey is always required: it is what
-// opens that sealed token.
+// selection rules and reports every vault the token can reach, and a
+// LinkedServiceUnset discriminator is defaulted server-side. Pass
+// LinkedServiceUnset and an empty token to probe with the token already
+// sealed in the vault, which therefore has to be linked. vaultKey is
+// always required: it is what opens that sealed token.
 //
 // Nothing is sent as a body when both fields are empty, so an empty probe
 // cannot be read as a request to test an empty token.
 //
 // The server budget is 10s, inside the client-wide timeout.
-func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey, linkedService, token string) (map[string]interface{}, error) {
+func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey string, linkedService CloudBrowserLinkedService, token string) (map[string]interface{}, error) {
 	host := c.cloudBrowserRESTHost()
 	reqURL := fmt.Sprintf("%s/vault/%s/service/test?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
 
 	var payload io.Reader
-	if linkedService != "" || token != "" {
-		body, err := json.Marshal(map[string]string{"linked_service": linkedService, "token": token})
+	if linkedService != LinkedServiceUnset || token != "" {
+		body, err := json.Marshal(map[string]string{"linked_service": string(linkedService), "token": token})
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal vault service test body: %w", err)
 		}

@@ -986,10 +986,10 @@ func (c *Client) CloudBrowserVaultRotate(vaultID, currentVaultKey string) (map[s
     included in error messages, or echoed back via Recorder breadcrumbs — see
     the security contract at the top of this section.
 
-func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey, linkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error)
+func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey string, linkedService CloudBrowserLinkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error)
     CloudBrowserVaultServiceLink links a manual vault to an external secret
-    manager and turns it into a mirror. linkedService is the provider
-    discriminator — "1password" is the only one today.
+    manager and turns it into a mirror. linkedService is required: this route
+    has no server-side default, so LinkedServiceUnset is rejected.
 
     serviceData carries the non-secret selection rules; vault_id or vault_name
     is required, the rest are optional:
@@ -1023,16 +1023,18 @@ func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[str
     / NewWithHost) and no per-call deadline, so a slow provider still returns
     the server's own report instead of a client-side cancel.
 
-func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey, linkedService, token string) (map[string]interface{}, error)
+func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey string, linkedService CloudBrowserLinkedService, token string) (map[string]interface{}, error)
     CloudBrowserVaultServiceTest probes provider credentials without reading
     any secret: the response is {vaults_visible, item_count, warnings}, which is
     what fills an upstream-vault picker.
 
     linkedService and token are both optional. Pass a candidate token to probe
     before a link exists — the probe then ignores the stored selection rules
-    and reports every vault the token can reach. Pass both as "" to probe with
-    the token already sealed in the vault, which therefore has to be linked.
-    vaultKey is always required: it is what opens that sealed token.
+    and reports every vault the token can reach, and a LinkedServiceUnset
+    discriminator is defaulted server-side. Pass LinkedServiceUnset and an empty
+    token to probe with the token already sealed in the vault, which therefore
+    has to be linked. vaultKey is always required: it is what opens that sealed
+    token.
 
     Nothing is sent as a body when both fields are empty, so an empty probe
     cannot be read as a request to test an empty token.
@@ -1059,8 +1061,8 @@ func (c *Client) CloudBrowserVaultServiceUpdate(vaultID, vaultKey, token string,
     rotation. For a metadata-only update pass both as "" and no X-Vault-Key
     header is sent.
 
-    linkedService is not a parameter: this route reads only the token and the
-    selection document, so a link's provider cannot be switched in place —
+    linkedService is not a parameter: the server re-decodes against the vault's
+    stored discriminator, so a link's provider cannot be switched in place —
     unlink and link again.
 
 func (c *Client) CloudBrowserVaultUpdate(vaultID string, name, description string) (map[string]interface{}, error)
@@ -1684,6 +1686,19 @@ func (cfg *CloudBrowserConfig) VNCClientPassword(apiKey string) (string, error)
     VNCPassword instead. Returns ErrVNCNotConfigured when the config carries no
     VNC credential to salt.
 
+type CloudBrowserLinkedService string
+    CloudBrowserLinkedService is the provider discriminator of a linked vault.
+    The server keys its decoder on these values; anything else is refused with
+    400 and never stored.
+
+const (
+	// LinkedServiceOnePassword is the only provider the server registers today.
+	LinkedServiceOnePassword CloudBrowserLinkedService = "1password"
+	// LinkedServiceUnset is accepted only by CloudBrowserVaultServiceTest, where
+	// the server picks the provider for a candidate-token probe. POST /service
+	// has no default and rejects it.
+	LinkedServiceUnset CloudBrowserLinkedService = ""
+)
 type CloudBrowserMonitoringOptions struct {
 	Period    MonitoringPeriod
 	ProxyPool string
