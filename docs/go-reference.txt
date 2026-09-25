@@ -986,6 +986,83 @@ func (c *Client) CloudBrowserVaultRotate(vaultID, currentVaultKey string) (map[s
     included in error messages, or echoed back via Recorder breadcrumbs — see
     the security contract at the top of this section.
 
+func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey, linkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error)
+    CloudBrowserVaultServiceLink links a manual vault to an external secret
+    manager and turns it into a mirror. linkedService is the provider
+    discriminator — "1password" is the only one today.
+
+    serviceData carries the non-secret selection rules; vault_id or vault_name
+    is required, the rest are optional:
+
+        map[string]interface{}{
+            "vault_name":   "scrapfly-ci",
+            "title_filter": "prod-*",
+            "tags":         []string{"scrapfly"},
+            "sync_mode":    "on_session", // or "manual"
+            "sync_ttl_s":   900,
+        }
+
+    token is the provider's service-account token. vaultKey is mandatory here
+    because the token is sealed under it and the server verifies the key first:
+    a well-formed wrong key would link the vault and leave a token every later
+    sync fails to open. Both are secret material — the SDK does not log either.
+
+    A vault that is already linked, or that still holds rows owned by a service,
+    is refused (409).
+
+func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[string]interface{}, error)
+    CloudBrowserVaultServiceSync forces a provider fetch and reconcile now,
+    bypassing the sync TTL and the hour-long back-off a failed run leaves
+    behind. The response is the flat report — imported, updated, deleted,
+    skipped, unmirrored, status, warnings.
+
+    vaultKey is required: the sealed service-account token is opened with it,
+    and the server verifies the key before claiming the sync round.
+
+    The server budget is 25s. The SDK has one client-wide timeout (150s, see New
+    / NewWithHost) and no per-call deadline, so a slow provider still returns
+    the server's own report instead of a client-side cancel.
+
+func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey, linkedService, token string) (map[string]interface{}, error)
+    CloudBrowserVaultServiceTest probes provider credentials without reading
+    any secret: the response is {vaults_visible, item_count, warnings}, which is
+    what fills an upstream-vault picker.
+
+    linkedService and token are both optional. Pass a candidate token to probe
+    before a link exists — the probe then ignores the stored selection rules
+    and reports every vault the token can reach. Pass both as "" to probe with
+    the token already sealed in the vault, which therefore has to be linked.
+    vaultKey is always required: it is what opens that sealed token.
+
+    Nothing is sent as a body when both fields are empty, so an empty probe
+    cannot be read as a request to test an empty token.
+
+    The server budget is 10s, inside the client-wide timeout.
+
+func (c *Client) CloudBrowserVaultServiceUnlink(vaultID string, keepItems bool) (map[string]interface{}, error)
+    CloudBrowserVaultServiceUnlink drops the link and turns the vault back into
+    a manual one.
+
+    keepItems governs the mirrored rows only — the sealed service-account token
+    is deleted either way. keepItems=false cannot be undone, which is why the
+    server keeps the items when the flag is absent or unparseable; the SDK
+    always writes the flag explicitly so an omission on the wire never decides
+    it. No vault key: nothing is sealed or opened.
+
+func (c *Client) CloudBrowserVaultServiceUpdate(vaultID, vaultKey, token string, serviceData map[string]interface{}) (map[string]interface{}, error)
+    CloudBrowserVaultServiceUpdate patches an existing link. serviceData
+    replaces the stored selection document wholesale — send the whole document,
+    not a delta.
+
+    Pass token only to rotate the service-account token; vaultKey is then
+    required, the same way CloudBrowserVaultItemUpdate requires it for a secret
+    rotation. For a metadata-only update pass both as "" and no X-Vault-Key
+    header is sent.
+
+    linkedService is not a parameter: this route reads only the token and the
+    selection document, so a link's provider cannot be switched in place —
+    unlink and link again.
+
 func (c *Client) CloudBrowserVaultUpdate(vaultID string, name, description string) (map[string]interface{}, error)
     CloudBrowserVaultUpdate patches a vault's metadata. Empty-string args are
     treated as "no change" and omitted from the wire payload — pass only the

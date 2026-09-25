@@ -1059,3 +1059,284 @@ func (c *Client) CloudBrowserVaultItemDelete(vaultID, itemID string) (map[string
 	}
 	return result, nil
 }
+
+// ----------------------------------------------------------------------
+// Cloud Browser Credential Vault — linked service (1Password)
+//
+// A vault is either `manual` (operator-entered items) or
+// `linked_service`: a read-only mirror of an upstream secret manager,
+// refreshed by the server from a service-account token sealed under the
+// customer key like any other item. The five calls below are the whole
+// operator surface — link, update, unlink, force a sync, probe
+// credentials. Mirrored items are read through
+// CloudBrowserVaultItemList and are not writable by the item endpoints.
+//
+// The security contract of the CRUD section applies unchanged: neither
+// the vault key nor the provider's service-account token is ever logged,
+// echoed, or embedded in an error — vaultErrorf takes the response body
+// only.
+// ----------------------------------------------------------------------
+
+// vaultServiceDataWire copies a linked_service_data document without
+// token_item_id. The server binds the id of the blob item it seals the
+// token into and ignores whatever the body carries on both POST and
+// PATCH, so forwarding the field would suggest a caller can redirect the
+// token lookup. Copied rather than deleted in place: the caller's map is
+// not ours to mutate.
+func vaultServiceDataWire(data map[string]interface{}) map[string]interface{} {
+	wire := make(map[string]interface{}, len(data))
+	for k, v := range data {
+		if k == "token_item_id" {
+			continue
+		}
+		wire[k] = v
+	}
+	return wire
+}
+
+// CloudBrowserVaultServiceLink links a manual vault to an external secret
+// manager and turns it into a mirror. linkedService is the provider
+// discriminator — "1password" is the only one today.
+//
+// serviceData carries the non-secret selection rules; vault_id or
+// vault_name is required, the rest are optional:
+//
+//	map[string]interface{}{
+//	    "vault_name":   "scrapfly-ci",
+//	    "title_filter": "prod-*",
+//	    "tags":         []string{"scrapfly"},
+//	    "sync_mode":    "on_session", // or "manual"
+//	    "sync_ttl_s":   900,
+//	}
+//
+// token is the provider's service-account token. vaultKey is mandatory
+// here because the token is sealed under it and the server verifies the
+// key first: a well-formed wrong key would link the vault and leave a
+// token every later sync fails to open. Both are secret material — the
+// SDK does not log either.
+//
+// A vault that is already linked, or that still holds rows owned by a
+// service, is refused (409).
+func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey, linkedService, token string, serviceData map[string]interface{}) (map[string]interface{}, error) {
+	host := c.cloudBrowserRESTHost()
+	reqURL := fmt.Sprintf("%s/vault/%s/service?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
+
+	body, err := json.Marshal(map[string]interface{}{
+		"linked_service":      linkedService,
+		"token":               token,
+		"linked_service_data": vaultServiceDataWire(serviceData),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vault service link body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault service link request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("X-Vault-Key", vaultKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vault service link request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, vaultErrorf("service link", resp.StatusCode, respBody)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode vault service link response: %w", err)
+	}
+	return result, nil
+}
+
+// CloudBrowserVaultServiceUpdate patches an existing link. serviceData
+// replaces the stored selection document wholesale — send the whole
+// document, not a delta.
+//
+// Pass token only to rotate the service-account token; vaultKey is then
+// required, the same way CloudBrowserVaultItemUpdate requires it for a
+// secret rotation. For a metadata-only update pass both as "" and no
+// X-Vault-Key header is sent.
+//
+// linkedService is not a parameter: this route reads only the token and
+// the selection document, so a link's provider cannot be switched in
+// place — unlink and link again.
+func (c *Client) CloudBrowserVaultServiceUpdate(vaultID, vaultKey, token string, serviceData map[string]interface{}) (map[string]interface{}, error) {
+	host := c.cloudBrowserRESTHost()
+	reqURL := fmt.Sprintf("%s/vault/%s/service?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
+
+	body, err := json.Marshal(map[string]interface{}{
+		"token":               token,
+		"linked_service_data": vaultServiceDataWire(serviceData),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal vault service update body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault service update request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", sdkUserAgent)
+	if vaultKey != "" {
+		req.Header.Set("X-Vault-Key", vaultKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vault service update request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, vaultErrorf("service update", resp.StatusCode, respBody)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode vault service update response: %w", err)
+	}
+	return result, nil
+}
+
+// CloudBrowserVaultServiceUnlink drops the link and turns the vault back
+// into a manual one.
+//
+// keepItems governs the mirrored rows only — the sealed service-account
+// token is deleted either way. keepItems=false cannot be undone, which is
+// why the server keeps the items when the flag is absent or unparseable;
+// the SDK always writes the flag explicitly so an omission on the wire
+// never decides it. No vault key: nothing is sealed or opened.
+func (c *Client) CloudBrowserVaultServiceUnlink(vaultID string, keepItems bool) (map[string]interface{}, error) {
+	host := c.cloudBrowserRESTHost()
+	reqURL := fmt.Sprintf("%s/vault/%s/service?key=%s&keep_items=%t",
+		host, url.PathEscape(vaultID), url.QueryEscape(c.key), keepItems)
+
+	req, err := http.NewRequest(http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault service unlink request: %w", err)
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vault service unlink request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, vaultErrorf("service unlink", resp.StatusCode, respBody)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode vault service unlink response: %w", err)
+	}
+	return result, nil
+}
+
+// CloudBrowserVaultServiceSync forces a provider fetch and reconcile now,
+// bypassing the sync TTL and the hour-long back-off a failed run leaves
+// behind. The response is the flat report — imported, updated, deleted,
+// skipped, unmirrored, status, warnings.
+//
+// vaultKey is required: the sealed service-account token is opened with
+// it, and the server verifies the key before claiming the sync round.
+//
+// The server budget is 25s. The SDK has one client-wide timeout (150s,
+// see New / NewWithHost) and no per-call deadline, so a slow provider
+// still returns the server's own report instead of a client-side cancel.
+func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[string]interface{}, error) {
+	host := c.cloudBrowserRESTHost()
+	reqURL := fmt.Sprintf("%s/vault/%s/service/sync?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault service sync request: %w", err)
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("X-Vault-Key", vaultKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vault service sync request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, vaultErrorf("service sync", resp.StatusCode, respBody)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode vault service sync response: %w", err)
+	}
+	return result, nil
+}
+
+// CloudBrowserVaultServiceTest probes provider credentials without
+// reading any secret: the response is {vaults_visible, item_count,
+// warnings}, which is what fills an upstream-vault picker.
+//
+// linkedService and token are both optional. Pass a candidate token to
+// probe before a link exists — the probe then ignores the stored
+// selection rules and reports every vault the token can reach. Pass both
+// as "" to probe with the token already sealed in the vault, which
+// therefore has to be linked. vaultKey is always required: it is what
+// opens that sealed token.
+//
+// Nothing is sent as a body when both fields are empty, so an empty probe
+// cannot be read as a request to test an empty token.
+//
+// The server budget is 10s, inside the client-wide timeout.
+func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey, linkedService, token string) (map[string]interface{}, error) {
+	host := c.cloudBrowserRESTHost()
+	reqURL := fmt.Sprintf("%s/vault/%s/service/test?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))
+
+	var payload io.Reader
+	if linkedService != "" || token != "" {
+		body, err := json.Marshal(map[string]string{"linked_service": linkedService, "token": token})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal vault service test body: %w", err)
+		}
+		payload = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create vault service test request: %w", err)
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("X-Vault-Key", vaultKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vault service test request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, vaultErrorf("service test", resp.StatusCode, respBody)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode vault service test response: %w", err)
+	}
+	return result, nil
+}
