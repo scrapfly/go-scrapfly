@@ -1,3 +1,8 @@
+// Every example here calls the live API and its recorded output is redacted, so
+// none carries an "// Output:" comment: go test compiles and type-checks them
+// without running them. Restoring an "// Output:" line makes go test scrape
+// production and diff stdout against placeholders it can never match.
+
 package scrapfly_test
 
 import (
@@ -10,12 +15,14 @@ import (
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
 )
 
+// getApiKey falls back to a placeholder instead of exiting: log.Fatalf here would
+// take the whole test binary down with it if an example ever regains an
+// "// Output:" comment, hiding every other test in the package.
 func getApiKey() string {
-	apiKey := os.Getenv("SCRAPFLY_API_KEY")
-	if apiKey == "" {
-		log.Fatalf("SCRAPFLY_API_KEY environment variable is not set")
+	if apiKey := os.Getenv("SCRAPFLY_API_KEY"); apiKey != "" {
+		return apiKey
 	}
-	return apiKey
+	return "YOUR_API_KEY"
 }
 
 // getAccount demonstrates fetching account information
@@ -34,7 +41,7 @@ func Example_getAccount() {
 	fmt.Println("Account:")
 	accountJSON, _ := json.MarshalIndent(account, "", "  ")
 	fmt.Println(string(accountJSON))
-	// Output: Account:
+	// Example output: Account:
 	// {
 	// 	"account": {
 	// 	  "account_id": "XX-XXX-4c01-a9X97-XXXX",
@@ -141,7 +148,7 @@ func Example_basicGet() {
 	fmt.Println("\nresponse cookies:")
 	cookiesJSON, _ := json.MarshalIndent(scrapeResult.Result.Cookies, "", "  ")
 	fmt.Println(string(cookiesJSON))
-	// Output: scrapfly: 2025/10/26 05:39:16 [DEBUG] scraping url https://httpbin.dev/html
+	// Example output: scrapfly: 2025/10/26 05:39:16 [DEBUG] scraping url https://httpbin.dev/html
 	// scrapfly: 2025/10/26 05:39:19 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// web log url:
 	// https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -349,7 +356,7 @@ func Example_downloadFile() {
 	for _, path := range paths {
 		fmt.Printf("Attachment saved to: %s\n", path)
 	}
-	// Output: scrapfly: 2025/11/06 18:30:41 [DEBUG] scraping url https://web-scraping.dev/file-download
+	// Example output: scrapfly: 2025/11/06 18:30:41 [DEBUG] scraping url https://web-scraping.dev/file-download
 	// scrapfly: 2025/11/06 18:30:55 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 	// attachments:
 	// [
@@ -417,7 +424,7 @@ func Example_jsRender() {
 	fmt.Println("\nbrowser data capture:")
 	browserDataJSON, _ := json.MarshalIndent(scrapeResult.Result.BrowserData, "", "  ")
 	fmt.Println(string(browserDataJSON))
-	// Output: scrapfly: 2025/10/26 05:39:19 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// Example output: scrapfly: 2025/10/26 05:39:19 [DEBUG] scraping url https://web-scraping.dev/product/1
 	// scrapfly: 2025/10/26 05:39:34 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// web log url:
 	// https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
@@ -535,7 +542,7 @@ func Example_scrapeExtraction() {
 	fmt.Println("extraction result:")
 	extractedDataJSON, _ := json.MarshalIndent(scrapeResult.Result.ExtractedData, "", "  ")
 	fmt.Println(string(extractedDataJSON))
-	// Output: scrapfly: 2025/11/07 01:01:46 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// Example output: scrapfly: 2025/11/07 01:01:46 [DEBUG] scraping url https://web-scraping.dev/product/1
 	// scrapfly: 2025/11/07 01:01:58 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXX
 	// extraction result:
 	// {
@@ -687,7 +694,7 @@ func Example_extractionLLM() {
 	fmt.Println("\nllm extraction in JSON:")
 	llmFormatResultJSON, _ := json.MarshalIndent(llmFormatResult, "", "  ")
 	fmt.Println(string(llmFormatResultJSON))
-	// Output: scrapfly: 2025/11/07 01:01:58 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// Example output: scrapfly: 2025/11/07 01:01:58 [DEBUG] scraping url https://web-scraping.dev/product/1
 	// scrapfly: 2025/11/07 01:02:00 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXX
 	// llm extraction:
 	// {
@@ -792,7 +799,7 @@ func Example_extractionAutoExtract() {
 	fmt.Println("product auto extract:")
 	productResultJSON, _ := json.MarshalIndent(productResult, "", "  ")
 	fmt.Println(string(productResultJSON))
-	// Output:scrapfly: 2025/11/17 05:22:31 [DEBUG] scraping url https://web-scraping.dev/product/1
+	// Example output: scrapfly: 2025/11/17 05:22:31 [DEBUG] scraping url https://web-scraping.dev/product/1
 	// scrapfly: 2025/11/17 05:22:35 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXX
 	// product auto extract:
 	// {
@@ -1061,7 +1068,7 @@ func Example_extractionTemplates() {
 	fmt.Println("template extract:")
 	templateResultJSON, _ := json.MarshalIndent(templateResult, "", "  ")
 	fmt.Println(string(templateResultJSON))
-	// Output: scrapfly: 2025/10/26 05:40:28 [DEBUG] scraping url https://web-scraping.dev/reviews
+	// Example output: scrapfly: 2025/10/26 05:40:28 [DEBUG] scraping url https://web-scraping.dev/reviews
 	// scrapfly: 2025/10/26 05:40:35 [DEBUG] scrape log url: https://scrapfly.io/dashboard/monitoring/log/XXXXXXXXXXXXXXXXXXXXXXXXXX
 	// template extract:
 	// {
@@ -1132,7 +1139,7 @@ func Example_screenshot() {
 		log.Fatalf("failed to save screenshot: %v", err)
 	}
 	fmt.Printf("saved screenshot to %s\n", filePath)
-	// Output: captured screenshot:
+	// Example output: captured screenshot:
 	// Format: jpeg, Size: 586399 bytes
 	// saved screenshot to screenshot.jpeg
 }
