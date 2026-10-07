@@ -13,11 +13,11 @@ type ScreenshotFormat string
 const (
 	// FormatJPG captures screenshots in JPEG format (smaller file size, lossy compression).
 	FormatJPG ScreenshotFormat = "jpg"
-	// FormatPNG captures screenshots in PNG format (larger file size, lossless compression).
+	// FormatPNG captures screenshots in PNG format (larger file size, re-encoded from the JPEG capture).
 	FormatPNG ScreenshotFormat = "png"
 	// FormatWEBP captures screenshots in WebP format (modern format with good compression).
 	FormatWEBP ScreenshotFormat = "webp"
-	// FormatGIF captures screenshots in GIF format (animated screenshots support).
+	// FormatGIF captures screenshots in GIF format (single frame, indexed colour).
 	FormatGIF ScreenshotFormat = "gif"
 )
 
