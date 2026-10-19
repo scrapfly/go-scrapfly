@@ -37,9 +37,9 @@ func basicGet(apiKey string) {
 
 	scrapeResult, err := client.Scrape(&scrapfly.ScrapeConfig{
 		URL: "https://httpbin.dev/html",
-		// Anti-bot bypass - enable this when scraping protected targets.
-		// Unblocker is a *bool; ASP is the deprecated alias that still works.
-		Unblocker: scrapfly.BoolPtr(true),
+		// Proxy pool: ProxyPoolBasic, ProxyPoolUnblocker (anti-bot bypass),
+		// ProxyPoolUnblockerUltra or ProxyPoolAuto.
+		ProxyPool: scrapfly.ProxyPoolUnblocker,
 		// server side cache - great for repeated requests
 		Cache:    true,
 		CacheTTL: 3600, // in seconds

@@ -84,6 +84,12 @@ type ScreenshotConfig struct {
 	// VisionDeficiencyType specifies the type of vision deficiency to simulate.
 	// see https://scrapfly.io/docs/screenshot-api/accessibility#vision_deficiency
 	VisionDeficiencyType VisionDeficiencyType
+	// ProxyPool is the proxy pool: ProxyPoolBasic, ProxyPoolUnblocker,
+	// ProxyPoolUnblockerUltra or ProxyPoolAuto. The Screenshot API takes these
+	// four only and ignores any other value. Empty sends no proxy_pool and the
+	// API's screenshot defaults apply. The screenshot price is the same on
+	// every pool, and a screenshot is never retried.
+	ProxyPool ProxyPool
 }
 
 // toAPIParams converts the ScreenshotConfig into URL parameters for the Scrapfly API.
@@ -148,6 +154,10 @@ func (c *ScreenshotConfig) toAPIParams() (url.Values, error) {
 
 	if c.VisionDeficiencyType != "" {
 		params.Set("vision_deficiency", string(c.VisionDeficiencyType))
+	}
+
+	if c.ProxyPool != "" {
+		params.Set("proxy_pool", string(c.ProxyPool))
 	}
 
 	return params, nil

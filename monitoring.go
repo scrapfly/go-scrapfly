@@ -72,7 +72,9 @@ type MonitoringTargetMetricsOptions struct {
 // queries. Cloud Browser is session-based with a distinct shape from
 // the request-based products (no domain/target, no include_webhook).
 type CloudBrowserMonitoringOptions struct {
-	Period    MonitoringPeriod
+	Period MonitoringPeriod
+	// ProxyPool filters to one Cloud Browser pool, as its runs record it:
+	// datacenter, residential, tor or byop.
 	ProxyPool string
 	Start     time.Time
 	End       time.Time

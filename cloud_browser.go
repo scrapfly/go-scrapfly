@@ -22,6 +22,9 @@ const (
 
 // CloudBrowserConfig configures a Cloud Browser session.
 type CloudBrowserConfig struct {
+	// ProxyPool is "datacenter", "residential", "tor" or "byop". The Web
+	// Scraping API pools basic, unblocker, unblocker_ultra and auto are
+	// refused here with ERR::BROWSER::CONFIG_ERROR.
 	ProxyPool string `json:"proxy_pool,omitempty"`
 	// OS is the fingerprint operating system: linux, windows, macos, android, iphone, ipad.
 	OS      string `json:"os,omitempty"`

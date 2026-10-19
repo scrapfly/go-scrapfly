@@ -44,11 +44,9 @@ func main() {
 
 	// Create a scrape configuration
 	scrapeConfig := &scrapfly.ScrapeConfig{
-		URL:        "https://web-scraping.dev/product/1",
-		RenderJS:   true,
-		Country:    "us",
-		Unblocker:  scrapfly.BoolPtr(true),
-		ProxyPool:  scrapfly.PublicResidentialPool,
+		URL:       "https://web-scraping.dev/product/1",
+		Country:   "us",
+		ProxyPool: scrapfly.ProxyPoolUnblocker,
 	}
 
 	// Perform the scrape
@@ -70,28 +68,62 @@ func main() {
 }
 ```
 
-## Unblocker
+## Proxy pools
 
-`Unblocker` turns on Scrapfly's anti-bot bypass. It is a `*bool`, so use
-`scrapfly.BoolPtr(true)` to enable it and `scrapfly.BoolPtr(false)` to
-explicitly disable it; leaving it `nil` means "unset".
+`ProxyPool` picks the proxy pool of the Web Scraping API, the Crawler and the
+Screenshot API. Each pool sets both the proxy network and the anti-bot bypass
+(the Unblocker):
+
+| Constant | Wire value | What it runs |
+|---|---|---|
+| `scrapfly.ProxyPoolBasic` | `basic` | datacenter proxies, Unblocker off |
+| `scrapfly.ProxyPoolUnblocker` | `unblocker` | residential proxies, Unblocker on |
+| `scrapfly.ProxyPoolUnblockerUltra` | `unblocker_ultra` | residential proxies, Unblocker on, the only pool accepted by targets and anti-bot protections that have a price of their own |
+| `scrapfly.ProxyPoolAuto` | `auto` | the API picks the pool before the request, from the target's profile: the Unblocker on datacenter proxies, or the pool the target needs; accepted on every target, the ones that require `unblocker_ultra` included, where their price is added; priced as the pool it runs on |
 
 ```go
 scrapeConfig := &scrapfly.ScrapeConfig{
 	URL:       "https://web-scraping.dev/product/1",
-	Unblocker: scrapfly.BoolPtr(true),
+	ProxyPool: scrapfly.ProxyPoolUnblocker,
 }
 
 crawlerConfig := &scrapfly.CrawlerConfig{
 	URL:       "https://web-scraping.dev/",
-	Unblocker: scrapfly.BoolPtr(true),
+	ProxyPool: string(scrapfly.ProxyPoolUnblocker),
 }
 ```
 
-`ASP` is the deprecated alias of `Unblocker` and keeps working — existing code
-needs no change. Only the name changed: both fields are sent to the API as the
-same `asp` parameter. When both are set, `ASP: true` wins, since a plain `bool`
-cannot tell "unset" from "explicitly false".
+A request on `basic` or `unblocker` against a target or anti-bot protection
+that has a price of its own fails with `ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED`
+(HTTP 422, not billed); retry it with `scrapfly.ProxyPoolUnblockerUltra`.
+Without `ProxyPool` the SDK sends no `proxy_pool`.
+
+The answer names the pool you asked for the way your account reads it.
+`result.Config.ProxyPool` and `result.Context.Proxy.Pool` read
+`public_tor_pool` for Tor and one of your own pools by its name. Otherwise,
+when the Unblocker ran (asked, or forced by a target that requires it),
+`basic` and `unblocker` read `unblocker` and any other pool `unblocker_ultra`.
+Without the Unblocker a Scrapfly pool reads by its network (`basic`,
+`unblocker`, `mobile`, `isp`) and any other name as sent.
+`result.Context.Proxy` also gives the network and country.
+
+The Screenshot API takes these four pools only and ignores any other value.
+Cloud Browser keeps its own pools, `datacenter`, `residential`, `tor` and
+`byop`, and refuses these four.
+
+### Deprecated: `Unblocker` and `ASP`
+
+`Unblocker` and `ASP` are deprecated: use `ProxyPool`
+(`scrapfly.ProxyPoolUnblockerUltra` for the Unblocker). The
+[migration guide](https://scrapfly.io/new-pricing#legacy-spellings) covers the
+requests written before the proxy pools, the pool names
+`scrapfly.PublicDataCenterPool` and `scrapfly.PublicResidentialPool` included.
+
+`Unblocker` is a `*bool`: `scrapfly.BoolPtr(true)` enables it,
+`scrapfly.BoolPtr(false)` disables it, `nil` means "unset". `ASP` is its
+deprecated alias. Both go to the API as the same `asp` parameter. When both are
+set, `ASP: true` wins, since a plain `bool` cannot tell "unset" from
+"explicitly false".
 
 That same limitation makes one row diverge from the other Scrapfly SDKs. Since
 `ASP: false` is indistinguishable from an unset `ASP`, the pair
@@ -112,7 +144,7 @@ cfg.Unblocker                            // nil after cfg.ASP = true
 
 Last write does not win, and reading one name back after writing the other gives
 the zero value. To turn the feature off, clear `ASP`. To read what the request
-will actually carry, call `UnblockerEnabled()`:
+will actually carry as `asp`, call `UnblockerEnabled()`:
 
 ```go
 cfg := &scrapfly.ScrapeConfig{URL: "https://web-scraping.dev/", Unblocker: scrapfly.BoolPtr(true)}
