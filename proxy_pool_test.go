@@ -30,13 +30,16 @@ func TestProxyPoolWireValues(t *testing.T) {
 // The legacy names stay members: dropping one turns its String() into
 // "invalid_proxy_pool" and every schema built from AnyEnum rejects it.
 func TestProxyPoolEnumKeepsLegacyNames(t *testing.T) {
-	for _, legacy := range []ProxyPool{PublicDataCenterPool, PublicResidentialPool, PublicTorPool} {
+	for _, legacy := range []ProxyPool{PublicDataCenterPool, PublicResidentialPool} {
 		if !legacy.IsValid() {
 			t.Errorf("%q.IsValid() = false; legacy names must keep working", legacy)
 		}
 		if !legacy.IsLegacy() {
 			t.Errorf("%q.IsLegacy() = false; it is a legacy pool name", legacy)
 		}
+	}
+	if !PublicTorPool.IsValid() || PublicTorPool.IsLegacy() {
+		t.Errorf("%q: IsValid() = %v, IsLegacy() = %v; the Tor pool is a current pool", PublicTorPool, PublicTorPool.IsValid(), PublicTorPool.IsLegacy())
 	}
 	unknown := ProxyPool("nonexistent_pool")
 	if unknown.IsValid() {
@@ -48,9 +51,9 @@ func TestProxyPoolEnumKeepsLegacyNames(t *testing.T) {
 	if len(GetEnumFor[ProxyPool]()) != len(GetAnyEnumFor[ProxyPool]()) {
 		t.Error("Enum() and AnyEnum() list different members")
 	}
-	want := []any{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicDataCenterPool, PublicResidentialPool, PublicTorPool}
+	want := []any{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicTorPool, PublicDataCenterPool, PublicResidentialPool}
 	if got := GetAnyEnumFor[ProxyPool](); !slices.Equal(got, want) {
-		t.Errorf("AnyEnum() = %v, want the new pools first, then the legacy names: %v", got, want)
+		t.Errorf("AnyEnum() = %v, want the current pools first, then the names written before them: %v", got, want)
 	}
 }
 

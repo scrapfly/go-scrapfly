@@ -96,7 +96,9 @@ crawlerConfig := &scrapfly.CrawlerConfig{
 A request on `basic` or `unblocker` against a target or anti-bot protection
 that has a price of its own fails with `ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED`
 (HTTP 422, not billed); retry it with `scrapfly.ProxyPoolUnblockerUltra`.
-Without `ProxyPool` the SDK sends no `proxy_pool`.
+Without `ProxyPool` the SDK sends no `proxy_pool`. `scrapfly.PublicTorPool`
+(`public_tor_pool`) routes through the Tor network, the only pool that reaches
+`.onion` sites.
 
 The answer names the pool you asked for the way your account reads it.
 `result.Config.ProxyPool` and `result.Context.Proxy.Pool` read

@@ -84,12 +84,13 @@ func (f ExtractionModel) IsValid() bool {
 
 // ProxyPool is the proxy_pool parameter of the Web Scraping API, the Crawler
 // and the Screenshot API: ProxyPoolBasic, ProxyPoolUnblocker,
-// ProxyPoolUnblockerUltra or ProxyPoolAuto. Each sets both the proxies and
-// the Unblocker. The Screenshot API ignores any other value.
+// ProxyPoolUnblockerUltra or ProxyPoolAuto, each of which sets both the
+// proxies and the Unblocker, or PublicTorPool, the Tor network. The Screenshot
+// API takes the first four and ignores any other value.
 //
 // The pool names written before the proxy pools (PublicDataCenterPool,
-// PublicResidentialPool, PublicTorPool) are still accepted. The migration
-// guide covers them: https://scrapfly.io/new-pricing#legacy-spellings
+// PublicResidentialPool) are still accepted. The migration guide covers them:
+// https://scrapfly.io/new-pricing#legacy-spellings
 type ProxyPool string
 
 // Proxy pools.
@@ -111,6 +112,9 @@ const (
 	// ProxyPoolUnblockerUltra included, where their price is added; priced as
 	// the pool it runs on.
 	ProxyPoolAuto ProxyPool = "auto"
+	// PublicTorPool routes egress through the Tor network, the only pool that
+	// reaches .onion hidden services; also used for OSINT.
+	PublicTorPool ProxyPool = "public_tor_pool"
 )
 
 // Pool names written before the proxy pools, still accepted. The migration
@@ -120,12 +124,10 @@ const (
 	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
 	// PublicResidentialPool is the former name of the residential pool.
 	PublicResidentialPool ProxyPool = "public_residential_pool"
-	// PublicTorPool routes egress through the Tor network for .onion hidden services and OSINT.
-	PublicTorPool ProxyPool = "public_tor_pool"
 )
 
 func (f ProxyPool) Enum() []ProxyPool {
-	return []ProxyPool{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicDataCenterPool, PublicResidentialPool, PublicTorPool}
+	return []ProxyPool{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicTorPool, PublicDataCenterPool, PublicResidentialPool}
 }
 
 func (f ProxyPool) String() string {
@@ -136,17 +138,18 @@ func (f ProxyPool) String() string {
 }
 
 func (f ProxyPool) AnyEnum() []any {
-	return []any{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicDataCenterPool, PublicResidentialPool, PublicTorPool}
+	return []any{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto, PublicTorPool, PublicDataCenterPool, PublicResidentialPool}
 }
 func (f ProxyPool) IsValid() bool {
 	return IsValidEnumType(f)
 }
 
 // IsLegacy reports whether f is one of the pool names written before the
-// proxy pools (PublicDataCenterPool, PublicResidentialPool, PublicTorPool).
+// proxy pools (PublicDataCenterPool, PublicResidentialPool). PublicTorPool is
+// not one: the Tor pool keeps its name.
 func (f ProxyPool) IsLegacy() bool {
 	switch f {
-	case PublicDataCenterPool, PublicResidentialPool, PublicTorPool:
+	case PublicDataCenterPool, PublicResidentialPool:
 		return true
 	}
 	return false
