@@ -1,10 +1,12 @@
 package scrapfly
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"time"
@@ -19,7 +21,9 @@ func urlSafeB64Encode(data string) string {
 // fetchWithRetry performs an HTTP request with automatic retry logic for 5xx errors.
 //
 // It retries the request up to the specified number of times with a delay between attempts.
-// Only server errors (5xx status codes) and network errors are retried.
+// Only server errors (5xx status codes) and network errors are retried. A timeout is not:
+// the API cancels a scrape whose client went away (ERR::SCRAPE::CLIENT_DISCONNECTED, not
+// billed), so a retry would start the scrape over and wait out the deadline again.
 // The request body must support re-reading via req.GetBody for retries to work properly.
 func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay time.Duration) (*http.Response, error) {
 	var lastErr error
@@ -40,6 +44,9 @@ func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay t
 
 		resp, err := client.Do(req)
 		if err != nil {
+			if isResponseTimeout(err) {
+				return nil, err
+			}
 			lastErr = err
 			DefaultLogger.Debug("request failed:", err, "retrying...")
 			time.Sleep(delay)
@@ -57,6 +64,21 @@ func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay t
 		return resp, nil
 	}
 	return nil, lastErr
+}
+
+// isResponseTimeout reports whether the deadline (http.Client.Timeout, a read timeout or the
+// request context's) ran out after the connection was made. A dial timeout is left out: that
+// request never reached the API, so retrying it starts nothing twice.
+func isResponseTimeout(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // ValidateExclusiveFields checks a struct for fields marked with the "exclusive" tag
