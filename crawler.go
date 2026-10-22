@@ -695,7 +695,7 @@ func (c *Client) CrawlPrompt(uuid, prompt string, opts *CrawlPromptOptions, hand
 
 // crawlPromptStreamTimeout bounds the whole prompt exchange. The API allows
 // retrieval plus up to 150s of generation under a 165s ceiling, and
-// http.Client.Timeout covers reading the body, so the SDK's 150s default would
+// http.Client.Timeout covers reading the body, so the SDK's 160s default would
 // cut a legitimate stream mid-answer.
 const crawlPromptStreamTimeout = 180 * time.Second
 

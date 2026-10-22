@@ -19,6 +19,10 @@ const (
 	defaultRetries = 3
 	defaultDelay   = 1 * time.Second
 	sdkUserAgent   = "Scrapfly-Go-SDK"
+
+	// defaultTimeout is the client-wide deadline. The Scrape API holds a request up to
+	// 155s and asks clients to read that long; 160s leaves a margin, as the Python SDK does.
+	defaultTimeout = 160 * time.Second
 )
 
 // Client is the main client for interacting with the Scrapfly API.
@@ -49,7 +53,7 @@ func (c *Client) SetCloudBrowserHost(host string) {
 //	client, _ := scrapfly.New("YOUR_API_KEY")
 //	client.SetHTTPClient(&http.Client{
 //	    Transport: &loggingTransport{base: http.DefaultTransport},
-//	    Timeout:   150 * time.Second,
+//	    Timeout:   160 * time.Second,
 //	})
 func (c *Client) SetHTTPClient(httpClient *http.Client) {
 	if httpClient == nil {
@@ -80,7 +84,7 @@ func New(key string) (*Client, error) {
 	return &Client{
 		key:        key,
 		host:       defaultHost,
-		httpClient: &http.Client{Timeout: 150 * time.Second},
+		httpClient: &http.Client{Timeout: defaultTimeout},
 	}, nil
 }
 
@@ -107,7 +111,7 @@ func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
 		key:  key,
 		host: host,
 		httpClient: &http.Client{
-			Timeout:   150 * time.Second,
+			Timeout:   defaultTimeout,
 			Transport: transport,
 		},
 	}, nil

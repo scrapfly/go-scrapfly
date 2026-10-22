@@ -1680,7 +1680,7 @@ func TestClient_PromptHTTPClient_OutlivesTheServerBudget(t *testing.T) {
 	if got := client.promptHTTPClient().Timeout; got != crawlPromptStreamTimeout {
 		t.Errorf("prompt timeout = %s, want %s", got, crawlPromptStreamTimeout)
 	}
-	if client.httpClient.Timeout != 150*time.Second {
+	if client.httpClient.Timeout != defaultTimeout {
 		t.Errorf("the shared client was mutated: %s", client.httpClient.Timeout)
 	}
 

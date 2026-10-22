@@ -196,7 +196,7 @@ func aliasIntegrationClient(t *testing.T) (*Client, *recordingTransport, string)
 	}
 
 	recorder := &recordingTransport{inner: transport}
-	client.SetHTTPClient(&http.Client{Timeout: 150 * time.Second, Transport: recorder})
+	client.SetHTTPClient(&http.Client{Timeout: defaultTimeout, Transport: recorder})
 
 	return client, recorder, tlsNote
 }
