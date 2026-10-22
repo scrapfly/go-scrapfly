@@ -1430,7 +1430,7 @@ func (c *Client) SetHTTPClient(httpClient *http.Client)
         client, _ := scrapfly.New("YOUR_API_KEY")
         client.SetHTTPClient(&http.Client{
             Transport: &loggingTransport{base: http.DefaultTransport},
-            Timeout:   150 * time.Second,
+            Timeout:   160 * time.Second,
         })
 
 func (c *Client) SnoozeAlert(alertUUID string, req AlertSnoozeRequest) (*Alert, error)
