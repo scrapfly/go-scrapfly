@@ -640,13 +640,9 @@ func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromp
 		"crawl_ids":  crawlIDs,
 		"generation": generation,
 	}
-	if opts != nil && opts.Search != nil {
-		search := map[string]interface{}{}
-		if err := opts.Search.apply(search); err != nil {
+	if opts != nil {
+		if err := applyRetrieval(body, opts.Search); err != nil {
 			return err
-		}
-		if len(search) > 0 {
-			body["search"] = search
 		}
 	}
 
@@ -691,6 +687,174 @@ func (c *Client) CrawlPrompt(uuid, prompt string, opts *CrawlPromptOptions, hand
 		return fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
 	}
 	return c.CrawlsPrompt([]string{uuid}, prompt, opts, handler)
+}
+
+// CrawlsPromptAnswer answers a question from the content of one or more
+// crawls, and returns the whole answer once generation completes.
+//
+// `POST /crawl/prompt` with `generation.stream: false`: the same facts as the
+// frames CrawlsPrompt hands its handler. CrawlPromptAnswer is sugar over a
+// one-element list.
+//
+// No retry: the request runs a fan-out and a generation, both billable.
+func (c *Client) CrawlsPromptAnswer(crawlIDs []string, prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error) {
+	if err := validateCrawlIDs(crawlIDs); err != nil {
+		return nil, err
+	}
+	if prompt == "" {
+		return nil, fmt.Errorf("%w: prompt must be a non-empty string", ErrCrawlerConfig)
+	}
+
+	generation := map[string]interface{}{"stream": false}
+	if opts != nil && opts.Model != "" {
+		generation["model"] = opts.Model
+	}
+	body := map[string]interface{}{
+		"prompt":     prompt,
+		"crawl_ids":  crawlIDs,
+		"generation": generation,
+	}
+	if opts != nil {
+		if err := applyRetrieval(body, opts.Search); err != nil {
+			return nil, err
+		}
+	}
+
+	var answer CrawlerPromptAnswer
+	if err := c.postCrawlerJSON("/crawl/prompt", body, &answer); err != nil {
+		return nil, err
+	}
+	return &answer, nil
+}
+
+// CrawlPromptAnswer answers a question from a single crawl's content, all at once.
+func (c *Client) CrawlPromptAnswer(uuid, prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+	return c.CrawlsPromptAnswer([]string{uuid}, prompt, opts)
+}
+
+// CrawlExtractOptions configures an extraction.
+type CrawlExtractOptions struct {
+	// Search overrides retrieval. Nil uses the server's defaults.
+	Search *CrawlSearchOptions
+}
+
+// CrawlsExtract extracts a structured object from the content of one or more
+// crawls.
+//
+// `POST /crawl/extract` retrieves like CrawlsPromptAnswer and answers with
+// Data shaped by schema, a JSON Schema handed to the model as its response
+// schema. There is no streaming variant. CrawlExtract is sugar over a
+// one-element list.
+//
+// No retry: a retry re-runs the fan-out and the generation.
+//
+// Example:
+//
+//	res, err := client.CrawlsExtract([]string{uuid}, "Every product with its price", map[string]interface{}{
+//	    "type":     "object",
+//	    "properties": map[string]interface{}{"products": map[string]interface{}{"type": "array"}},
+//	    "required": []string{"products"},
+//	}, nil)
+//	var out struct{ Products []struct{ Name string; Price float64 } }
+//	err = res.Decode(&out)
+func (c *Client) CrawlsExtract(crawlIDs []string, prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error) {
+	if err := validateCrawlIDs(crawlIDs); err != nil {
+		return nil, err
+	}
+	if prompt == "" {
+		return nil, fmt.Errorf("%w: prompt must be a non-empty string", ErrCrawlerConfig)
+	}
+	if len(schema) == 0 {
+		return nil, fmt.Errorf("%w: schema must be a non-empty JSON Schema object", ErrCrawlerConfig)
+	}
+
+	body := map[string]interface{}{
+		"prompt":    prompt,
+		"crawl_ids": crawlIDs,
+		"schema":    schema,
+	}
+	if opts != nil {
+		if err := applyRetrieval(body, opts.Search); err != nil {
+			return nil, err
+		}
+	}
+
+	var extracted CrawlerExtractResponse
+	if err := c.postCrawlerJSON("/crawl/extract", body, &extracted); err != nil {
+		return nil, err
+	}
+	return &extracted, nil
+}
+
+// CrawlExtract extracts a structured object from a single crawl's content.
+func (c *Client) CrawlExtract(uuid, prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error) {
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
+	}
+	return c.CrawlsExtract([]string{uuid}, prompt, schema, opts)
+}
+
+// applyRetrieval sets the `search` block of a prompt or an extraction. That
+// block takes no cursor: the API rejects the unknown field.
+func applyRetrieval(body map[string]interface{}, search *CrawlSearchOptions) error {
+	if search == nil {
+		return nil
+	}
+	if search.Cursor != "" {
+		return fmt.Errorf("%w: Cursor pages CrawlsSearch results, a prompt or an extraction takes none", ErrCrawlerConfig)
+	}
+	retrieval := map[string]interface{}{}
+	if err := search.apply(retrieval); err != nil {
+		return err
+	}
+	if len(retrieval) > 0 {
+		body["search"] = retrieval
+	}
+	return nil
+}
+
+// postCrawlerJSON POSTs body to a crawler endpoint that generates, once, and
+// decodes its JSON answer into out. It shares the prompt's deadline:
+// generation runs under the same server budget.
+func (c *Client) postCrawlerJSON(path string, body map[string]interface{}, out interface{}) error {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("failed to encode crawler request body: %w", err)
+	}
+
+	endpointURL, _ := url.Parse(c.host + path)
+	q := url.Values{}
+	q.Set("key", c.key)
+	endpointURL.RawQuery = q.Encode()
+
+	req, err := http.NewRequest("POST", endpointURL.String(), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", sdkUserAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.promptHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return c.handleCrawlerErrorResponse(resp, bodyBytes)
+	}
+	if err := json.Unmarshal(bodyBytes, out); err != nil {
+		return fmt.Errorf("failed to decode %s response: %w", path, err)
+	}
+	return nil
 }
 
 // crawlPromptStreamTimeout bounds the whole prompt exchange. The API allows
@@ -1096,6 +1260,10 @@ func (c *Client) handleCrawlerErrorResponse(resp *http.Response, body []byte) er
 	_ = json.Unmarshal(body, &envelope)
 
 	msg := envelope.Message
+	// The engine relays its own failures as {"error": message, "code": ERR::...}.
+	if msg == "" && envelope.Error != "" && !strings.HasPrefix(envelope.Error, "ERR::") {
+		msg = envelope.Error
+	}
 	if msg == "" {
 		msg = fmt.Sprintf("crawler API returned status %d", resp.StatusCode)
 	}

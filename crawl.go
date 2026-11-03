@@ -220,6 +220,24 @@ func (c *Crawl) Prompt(prompt string, opts *CrawlPromptOptions, handler CrawlPro
 	return c.client.CrawlPrompt(c.uuid, prompt, opts, handler)
 }
 
+// PromptAnswer answers a question from this crawl's content, all at once.
+// Thin wrapper around Client.CrawlPromptAnswer.
+func (c *Crawl) PromptAnswer(prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlPromptAnswer(c.uuid, prompt, opts)
+}
+
+// Extract extracts a structured object from this crawl's content, shaped by
+// schema. Thin wrapper around Client.CrawlExtract.
+func (c *Crawl) Extract(prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error) {
+	if err := c.requireStarted(); err != nil {
+		return nil, err
+	}
+	return c.client.CrawlExtract(c.uuid, prompt, schema, opts)
+}
+
 // RefreshNow re-scrapes this crawl's URLs in place, right now. Thin wrapper
 // around Client.CrawlRefreshNow.
 //

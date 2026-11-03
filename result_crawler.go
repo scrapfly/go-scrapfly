@@ -430,6 +430,50 @@ type CrawlerPromptEvent struct {
 	Raw []byte
 }
 
+// CrawlerPromptSearch says how much of the corpus a prompt answer or an
+// extraction covers. A skipped crawl is never fatal.
+type CrawlerPromptSearch struct {
+	Completeness      string                 `json:"completeness"`
+	CrawlsRequested   int                    `json:"crawls_requested"`
+	CrawlsSearched    int                    `json:"crawls_searched"`
+	CrawlsPrunedExact int                    `json:"crawls_pruned_exact"`
+	Skipped           []CrawlerSearchSkipped `json:"skipped"`
+}
+
+// CrawlerPromptAnswer is the answer of `POST /crawl/prompt` with
+// `generation.stream: false`: the facts of the stream, in one object.
+type CrawlerPromptAnswer struct {
+	Prompt  string                `json:"prompt"`
+	Answer  string                `json:"answer"`
+	Sources []CrawlerPromptSource `json:"sources"`
+	// SourcesUsed, SourcesDropped, Truncated and APICredit mean what they mean
+	// on CrawlerPromptDone.
+	SourcesUsed    []int               `json:"sources_used"`
+	SourcesDropped int                 `json:"sources_dropped"`
+	Truncated      bool                `json:"truncated"`
+	Search         CrawlerPromptSearch `json:"search"`
+	APICredit      *int                `json:"api_credit"`
+}
+
+// CrawlerExtractResponse is the answer of `POST /crawl/extract`. Data is the
+// object the request's JSON Schema shaped, left encoded: Decode it into your
+// own type. The schema constrains the model as it generates; it is not
+// validated again afterwards, so validate anything you act on.
+type CrawlerExtractResponse struct {
+	Prompt string          `json:"prompt"`
+	Data   json.RawMessage `json:"data"`
+	// Sources are the retrieved chunks Data was built from.
+	Sources        []CrawlerPromptSource `json:"sources"`
+	SourcesDropped int                   `json:"sources_dropped"`
+	Truncated      bool                  `json:"truncated"`
+	Search         CrawlerPromptSearch   `json:"search"`
+}
+
+// Decode unmarshals Data into v.
+func (r *CrawlerExtractResponse) Decode(v interface{}) error {
+	return json.Unmarshal(r.Data, v)
+}
+
 // ==============================================================================
 // Auto-refresh (POST/PATCH /crawl/{uuid}/refresh, GET .../refresh/history)
 // ==============================================================================
