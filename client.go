@@ -152,7 +152,7 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		DefaultLogger.Error("failed to fetch large object:", err)
 		return "", "", err
@@ -435,7 +435,7 @@ func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -659,7 +659,7 @@ func (c *Client) Account() (*AccountData, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}

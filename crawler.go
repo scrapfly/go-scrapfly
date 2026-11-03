@@ -664,7 +664,7 @@ func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromp
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := c.promptHTTPClient().Do(req)
+	resp, err := doWithoutKey(c.promptHTTPClient(), req)
 	if err != nil {
 		return err
 	}
@@ -838,7 +838,7 @@ func (c *Client) postCrawlerJSON(path string, body map[string]interface{}, out i
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.promptHTTPClient().Do(req)
+	resp, err := doWithoutKey(c.promptHTTPClient(), req)
 	if err != nil {
 		return err
 	}
@@ -1033,7 +1033,7 @@ func (c *Client) CrawlRefreshNow(uuid string) (*CrawlerRefreshState, error) {
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}

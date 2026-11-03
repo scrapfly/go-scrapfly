@@ -243,7 +243,7 @@ func (c *Client) scheduleRequest(method, path, extraQuery string, body interface
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}

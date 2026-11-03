@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -16,6 +18,44 @@ import (
 // This is used internally for encoding JS code and other parameters.
 func urlSafeB64Encode(data string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(data))
+}
+
+// do sends req with the client's HTTP client; see doWithoutKey.
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	return doWithoutKey(c.httpClient, req)
+}
+
+// doWithoutKey sends req and masks the API key in a transport error: the
+// *url.Error net/http returns prints the request URL, query included, and the
+// key rides in the query.
+func doWithoutKey(client *http.Client, req *http.Request) (*http.Response, error) {
+	resp, err := client.Do(req)
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		urlErr.URL = withoutKey(urlErr.URL)
+	}
+	return resp, err
+}
+
+// withoutKey returns rawURL with the value of its key parameter masked.
+func withoutKey(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		base, _, _ := strings.Cut(rawURL, "?")
+		return base
+	}
+	// u.Query() drops a malformed pair silently, key included.
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		u.RawQuery = ""
+		return u.String()
+	}
+	if !query.Has("key") {
+		return rawURL
+	}
+	query.Set("key", "REDACTED")
+	u.RawQuery = query.Encode()
+	return u.String()
 }
 
 // fetchWithRetry performs an HTTP request with automatic retry logic for 5xx errors.
@@ -42,7 +82,7 @@ func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay t
 			req.Body = bodyReader
 		}
 
-		resp, err := client.Do(req)
+		resp, err := doWithoutKey(client, req)
 		if err != nil {
 			if isResponseTimeout(err) {
 				return nil, err

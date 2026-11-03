@@ -147,7 +147,7 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 	// which would break the multipart parser downstream.
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ScrapeBatch: http do: %w", err)
 	}

@@ -592,7 +592,7 @@ func (c *Client) alertDoJSON(method, path string, body, out any) error {
 // delegates to handleAPIErrorResponse (shared with monitoring + scrape),
 // keeping error shapes consistent across the whole SDK.
 func (c *Client) alertExec(req *http.Request, out any) error {
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}

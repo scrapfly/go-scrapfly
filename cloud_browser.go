@@ -354,7 +354,7 @@ func (c *Client) CloudBrowserUnblock(config UnblockConfig) (*UnblockResult, erro
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("unblock request failed: %w", err)
 	}
@@ -388,7 +388,7 @@ func (c *Client) CloudBrowserSessionStop(sessionID string) error {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return fmt.Errorf("stop request failed: %w", err)
 	}
@@ -414,7 +414,7 @@ func (c *Client) CloudBrowserPlayback(runID string) (map[string]interface{}, err
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("playback request failed: %w", err)
 	}
@@ -486,7 +486,7 @@ func (c *Client) CloudBrowserVideo(runID string) ([]byte, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("video request failed: %w", err)
 	}
@@ -511,7 +511,7 @@ func (c *Client) CloudBrowserSessions() (map[string]interface{}, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("sessions request failed: %w", err)
 	}
@@ -540,7 +540,7 @@ func (c *Client) CloudBrowserExtensionList() (map[string]interface{}, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("extension list request failed: %w", err)
 	}
@@ -569,7 +569,7 @@ func (c *Client) CloudBrowserExtensionGet(extensionID string) (map[string]interf
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("extension get request failed: %w", err)
 	}
@@ -616,7 +616,7 @@ func (c *Client) CloudBrowserExtensionUpload(filePath string) (map[string]interf
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("upload request failed: %w", err)
 	}
@@ -645,7 +645,7 @@ func (c *Client) CloudBrowserExtensionDelete(extensionID string) (map[string]int
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("extension delete request failed: %w", err)
 	}
@@ -716,7 +716,7 @@ func (c *Client) CloudBrowserVaultCreate(name, description string) (map[string]i
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault create request failed: %w", err)
 	}
@@ -746,7 +746,7 @@ func (c *Client) CloudBrowserVaultList() (map[string]interface{}, error) {
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault list request failed: %w", err)
 	}
@@ -776,7 +776,7 @@ func (c *Client) CloudBrowserVaultGet(vaultID string) (map[string]interface{}, e
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault get request failed: %w", err)
 	}
@@ -820,7 +820,7 @@ func (c *Client) CloudBrowserVaultUpdate(vaultID string, name, description strin
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault update request failed: %w", err)
 	}
@@ -850,7 +850,7 @@ func (c *Client) CloudBrowserVaultDelete(vaultID string) (map[string]interface{}
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault delete request failed: %w", err)
 	}
@@ -888,7 +888,7 @@ func (c *Client) CloudBrowserVaultRotate(vaultID, currentVaultKey string) (map[s
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("X-Vault-Key", currentVaultKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault rotate request failed: %w", err)
 	}
@@ -922,7 +922,7 @@ func (c *Client) CloudBrowserVaultItemList(vaultID string) (map[string]interface
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault item list request failed: %w", err)
 	}
@@ -970,7 +970,7 @@ func (c *Client) CloudBrowserVaultItemCreate(vaultID, vaultKey string, item map[
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("X-Vault-Key", vaultKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault item create request failed: %w", err)
 	}
@@ -1014,7 +1014,7 @@ func (c *Client) CloudBrowserVaultItemUpdate(vaultID, itemID, vaultKey string, p
 		req.Header.Set("X-Vault-Key", vaultKey)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault item update request failed: %w", err)
 	}
@@ -1045,7 +1045,7 @@ func (c *Client) CloudBrowserVaultItemDelete(vaultID, itemID string) (map[string
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault item delete request failed: %w", err)
 	}
@@ -1155,7 +1155,7 @@ func (c *Client) CloudBrowserVaultServiceLink(vaultID, vaultKey string, linkedSe
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("X-Vault-Key", vaultKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault service link request failed: %w", err)
 	}
@@ -1207,7 +1207,7 @@ func (c *Client) CloudBrowserVaultServiceUpdate(vaultID, vaultKey, token string,
 		req.Header.Set("X-Vault-Key", vaultKey)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault service update request failed: %w", err)
 	}
@@ -1244,7 +1244,7 @@ func (c *Client) CloudBrowserVaultServiceUnlink(vaultID string, keepItems bool) 
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault service unlink request failed: %w", err)
 	}
@@ -1284,7 +1284,7 @@ func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[str
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("X-Vault-Key", vaultKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault service sync request failed: %w", err)
 	}
@@ -1341,7 +1341,7 @@ func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey string, linkedSe
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("X-Vault-Key", vaultKey)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("vault service test request failed: %w", err)
 	}

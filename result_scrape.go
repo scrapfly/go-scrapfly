@@ -363,7 +363,11 @@ func (s *Screenshot) Image() ([]byte, error) {
 	if s.image != nil {
 		return s.image, nil
 	}
-	resp, err := http.Get(s.URL)
+	req, err := http.NewRequest("GET", s.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := doWithoutKey(http.DefaultClient, req)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +384,11 @@ func (a *Attachment) Data() ([]byte, error) {
 	if a.data != nil {
 		return a.data, nil
 	}
-	resp, err := http.Get(a.Content)
+	req, err := http.NewRequest("GET", a.Content, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := doWithoutKey(http.DefaultClient, req)
 	if err != nil {
 		return nil, err
 	}

@@ -65,7 +65,7 @@ func (c *Client) Classify(ctx context.Context, req *ClassifyRequest) (*ClassifyR
 	httpReq.Header.Set("Accept", "application/json")
 	httpReq.Header.Set("User-Agent", sdkUserAgent)
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.do(httpReq)
 	if err != nil {
 		return nil, err
 	}

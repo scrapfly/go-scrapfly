@@ -243,7 +243,7 @@ func (c *Client) doMonitoringRequest(requestURL string) (map[string]any, error) 
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, err
 	}
