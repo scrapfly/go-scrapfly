@@ -118,6 +118,17 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 			}
 		}
 
+		// What a single scrape sends as the request itself: the API reads
+		// both keys of a batch entry and runs a GET without them.
+		entry["method"] = http.MethodGet
+		if cfg.Method != "" {
+			entry["method"] = strings.ToUpper(cfg.Method.String())
+		}
+
+		if cfg.Body != "" {
+			entry["body"] = cfg.Body
+		}
+
 		bodyConfigs = append(bodyConfigs, entry)
 	}
 
