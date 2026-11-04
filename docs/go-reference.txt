@@ -1646,8 +1646,8 @@ type CloudBrowserConfig struct {
 	// PerimeterX hold, and puzzle-click captchas are handled automatically —
 	// no extra CDP calls from the client.
 	//
-	// Billed per solve (5 credits for interaction-based, 20 for token-based);
-	// a failed attempt (captchaError) costs nothing.
+	// Billed per solved captcha, at the price of its type (Supported Captcha
+	// Types in the docs below); a failed attempt (captchaError) costs nothing.
 	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
 	SolveCaptcha bool `json:"solve_captcha,omitempty"`
 
