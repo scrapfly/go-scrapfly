@@ -330,7 +330,7 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 		return "", "", err
 	}
 	req.Header.Set("User-Agent", sdkUserAgent)
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	// No Accept-Encoding: the transport gunzips only an answer to the one it adds itself.
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.do(req)
@@ -342,7 +342,7 @@ func (c *Client) handleLargeObjects(contentURL string, format string) (string, s
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", "", fmt.Errorf("failed to fetch large object: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+		return "", "", c.handleAPIErrorResponse(resp, bodyBytes)
 	}
 
 	switch format {
