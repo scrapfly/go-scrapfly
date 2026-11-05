@@ -36,14 +36,12 @@ func main() {
 	// default allocator tries to rediscover one over HTTP and fails on the
 	// missing port:
 	//
-	//   allocCtx, cancel := chromedp.NewRemoteAllocator(ctx, result.WSURL, chromedp.NoModifyURL)
+	//   allocCtx, cancel := remote.NewAllocator(ctx, result.WSURL, remote.NoModifyURL)
 	//   defer cancel()
 	//   taskCtx, cancel := chromedp.NewContext(allocCtx)
 	//   defer cancel()
-	//   var title string
-	//   chromedp.Run(taskCtx,
-	//       chromedp.Navigate("https://web-scraping.dev/products"),
-	//       chromedp.Title(&title))
+	//   chromedp.Do(taskCtx, chromedp.Navigate("https://web-scraping.dev/products"))
+	//   title, _ := chromedp.Run(taskCtx, chromedp.Title())
 	//   fmt.Println("Page title:", title)
 
 	fmt.Println("\nConnect to the browser using the WS URL above with chromedp, rod, or playwright-go")
