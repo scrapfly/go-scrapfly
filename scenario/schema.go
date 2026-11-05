@@ -53,6 +53,9 @@ const jsScenarioSchemaString = `
           "$ref": "#/$defs/waitForNavigationStep"
         },
         {
+          "$ref": "#/$defs/solveCaptchaStep"
+        },
+        {
           "$ref": "#/$defs/waitForSelectorStep"
         }
       ]
@@ -271,6 +274,32 @@ const jsScenarioSchemaString = `
       },
       "required": [
         "wait_for_navigation"
+      ],
+      "additionalProperties": false
+    },
+    "solveCaptchaStep": {
+      "title": "SolveCaptcha Step",
+      "type": "object",
+      "properties": {
+        "solve_captcha": {
+          "type": "object",
+          "properties": {
+            "timeout": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 120000,
+              "default": 25000
+            },
+            "ignore": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "solve_captcha"
       ],
       "additionalProperties": false
     },
@@ -552,6 +581,32 @@ const jsScenarioSchemaFlattenedString = `
         },
         "required": [
           "wait_for_navigation"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "title": "SolveCaptcha Step",
+        "type": "object",
+        "properties": {
+          "solve_captcha": {
+            "type": "object",
+            "properties": {
+              "timeout": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000,
+                "default": 25000
+              },
+              "ignore": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "solve_captcha"
         ],
         "additionalProperties": false
       },

@@ -232,6 +232,44 @@ func (b *ScenarioBuilder) WaitForNavigation(opts ...WaitForNavOption) *ScenarioB
 	return b
 }
 
+// --- Solve Captcha Action ---
+
+// solveCaptchaParams holds all parameters for a "solve_captcha" action.
+type solveCaptchaParams struct {
+	Timeout int  `json:"timeout,omitempty"`
+	Ignore  bool `json:"ignore,omitempty"`
+}
+
+// SolveCaptchaOption is a function that configures a solve_captcha action.
+type SolveCaptchaOption func(*solveCaptchaParams)
+
+// WithCaptchaTimeout sets the maximum time to wait for the captcha to be solved.
+func WithCaptchaTimeout(milliseconds int) SolveCaptchaOption {
+	return func(p *solveCaptchaParams) {
+		p.Timeout = milliseconds
+	}
+}
+
+// WithCaptchaIgnore continues the scenario when the captcha is not solved.
+func WithCaptchaIgnore() SolveCaptchaOption {
+	return func(p *solveCaptchaParams) {
+		p.Ignore = true
+	}
+}
+
+// SolveCaptcha adds a step that solves the captcha on the page. A scenario holds 5 of these steps at most.
+func (b *ScenarioBuilder) SolveCaptcha(opts ...SolveCaptchaOption) *ScenarioBuilder {
+	if b.err != nil {
+		return b
+	}
+	params := &solveCaptchaParams{}
+	for _, opt := range opts {
+		opt(params)
+	}
+	b.steps = append(b.steps, map[string]interface{}{"solve_captcha": params})
+	return b
+}
+
 // --- Wait For Selector Action ---
 
 // SelectorState defines the desired state of an element to wait for.
