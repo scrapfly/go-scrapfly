@@ -265,6 +265,11 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error) {
 	if err := json.Unmarshal(bodyBytes, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal scrape result: %w", err)
 	}
+	// QUEUED: a scrape with a webhook, delivered to it later.
+	if result.Result.Status == "QUEUED" {
+		return &result, nil
+	}
+
 	if result.Result.Success && result.Result.Status == "DONE" {
 		DefaultLogger.Debug("scrape log url:", result.Result.LogURL)
 
