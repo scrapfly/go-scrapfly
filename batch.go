@@ -281,21 +281,7 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 				}
 			}
 
-			var result ScrapeResult
-			var decodeErr error
-
-			switch {
-			case strings.HasPrefix(partContentType, "application/json"):
-				decodeErr = json.Unmarshal(partBytes, &result)
-			case strings.HasPrefix(partContentType, "application/msgpack"),
-				strings.HasPrefix(partContentType, "application/x-msgpack"):
-				// ScrapeResult's fields use `json:` tags; tell the
-				// msgpack decoder to honor those so the same struct
-				// decodes correctly from either wire format.
-				dec := msgpack.NewDecoder(bytes.NewReader(partBytes))
-				dec.SetCustomStructTag("json")
-				decodeErr = dec.Decode(&result)
-			default:
+			if !isDecodableBatchPart(partContentType) {
 				results <- BatchResult{
 					CorrelationID: correlationID,
 					Err:           fmt.Errorf("ScrapeBatch: unsupported part Content-Type %q", partContentType),
@@ -303,7 +289,9 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 				continue
 			}
 
-			if decodeErr != nil {
+			result := &ScrapeResult{}
+
+			if decodeErr := decodeBatchPart(partContentType, partBytes, result); decodeErr != nil {
 				results <- BatchResult{
 					CorrelationID: correlationID,
 					Err:           fmt.Errorf("ScrapeBatch: unmarshal part for %q: %w", correlationID, decodeErr),
@@ -312,14 +300,47 @@ func (c *Client) ScrapeBatchWithOptions(configs []*ScrapeConfig, opts BatchOptio
 				continue
 			}
 
+			// A config with a webhook is answered by its enqueue ack, the scrape's answer under `result`.
+			if cfg := configByCorrelation[correlationID]; cfg != nil && cfg.Webhook != "" {
+				var ack batchEnqueueAck
+
+				if decodeBatchPart(partContentType, partBytes, &ack) == nil && ack.Enqueued && ack.Result != nil {
+					result = ack.Result
+				}
+			}
+
 			results <- BatchResult{
 				CorrelationID: correlationID,
-				Result:        &result,
+				Result:        result,
 			}
 		}
 	}()
 
 	return results, nil
+}
+
+// batchEnqueueAck is the part answering a config with a webhook.
+type batchEnqueueAck struct {
+	Enqueued bool          `json:"enqueued"`
+	Result   *ScrapeResult `json:"result"`
+}
+
+// isDecodableBatchPart says whether decodeBatchPart reads that Content-Type.
+func isDecodableBatchPart(contentType string) bool {
+	return strings.HasPrefix(contentType, "application/json") ||
+		strings.HasPrefix(contentType, "application/msgpack") ||
+		strings.HasPrefix(contentType, "application/x-msgpack")
+}
+
+// decodeBatchPart decodes a JSON or msgpack part body.
+func decodeBatchPart(contentType string, body []byte, target any) error {
+	if strings.HasPrefix(contentType, "application/json") {
+		return json.Unmarshal(body, target)
+	}
+	// ScrapeResult's fields use `json:` tags: the msgpack decoder reads them too.
+	dec := msgpack.NewDecoder(bytes.NewReader(body))
+	dec.SetCustomStructTag("json")
+	return dec.Decode(target)
 }
 
 // batchErrorProbe decodes the fields of an API error part body;
