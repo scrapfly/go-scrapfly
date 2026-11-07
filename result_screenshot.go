@@ -15,6 +15,8 @@ type ScreenshotResult struct {
 	Image []byte
 	// Metadata contains information about the screenshot.
 	Metadata ScreenshotMetadata
+	// JobUUID is the job of a screenshot with a webhook: the image is delivered to the webhook, and Image and Metadata are empty.
+	JobUUID string
 }
 
 // ScreenshotMetadata contains metadata about a captured screenshot.

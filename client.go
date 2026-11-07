@@ -567,7 +567,18 @@ func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	// 201: a screenshot with a webhook, delivered to it later.
+	if resp.StatusCode == http.StatusCreated {
+		var enqueued struct {
+			WebhookEnqueued bool   `json:"webhook_enqueued"`
+			JobUUID         string `json:"job_uuid"`
+		}
+		if json.Unmarshal(bodyBytes, &enqueued) == nil && enqueued.WebhookEnqueued && enqueued.JobUUID != "" {
+			return &ScreenshotResult{JobUUID: enqueued.JobUUID}, nil
+		}
+	}
+	// A JSON answer is never an image.
+	if resp.StatusCode != http.StatusOK || strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 		return nil, c.handleAPIErrorResponse(resp, bodyBytes)
 	}
 
