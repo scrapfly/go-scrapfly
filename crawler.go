@@ -282,7 +282,20 @@ func (c *Client) CrawlContentsJSON(uuid string, format CrawlerContentFormat, opt
 			ErrUnexpectedResponseFormat, ct,
 		)
 	}
+	if opts.URL != "" {
+		return parseSingleURLContents(opts.URL, body)
+	}
 	return parseCrawlerContents(body)
+}
+
+// parseSingleURLContents decodes the contents of one URL, a {format: content}
+// object, into the shape of the bulk envelope.
+func parseSingleURLContents(targetURL string, body []byte) (*CrawlerContents, error) {
+	var formats map[string]string
+	if err := json.Unmarshal(body, &formats); err != nil {
+		return nil, fmt.Errorf("failed to decode crawler contents JSON: %w", err)
+	}
+	return &CrawlerContents{Contents: map[string]map[string]string{targetURL: formats}}, nil
 }
 
 // CrawlContentsPlain fetches the raw content for a single crawled URL in

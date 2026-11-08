@@ -742,6 +742,24 @@ func TestClient_CrawlContentsJSON(t *testing.T) {
 	}
 }
 
+func TestClient_CrawlContentsJSON_SingleURL(t *testing.T) {
+	const page = "https://web-scraping.dev/products"
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("url") != page {
+			t.Errorf("url param: %s", r.URL.Query().Get("url"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"markdown": "# Products", "text": "Products"}`))
+	})
+	result, err := client.CrawlContentsJSON("abc-123", CrawlerFormatMarkdown, &CrawlContentsOptions{URL: page})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Contents[page]["markdown"] != "# Products" || result.Contents[page]["text"] != "Products" {
+		t.Errorf("contents: %v", result.Contents)
+	}
+}
+
 func TestClient_CrawlContentsPlain(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("plain") != "true" {
