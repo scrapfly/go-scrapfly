@@ -697,6 +697,11 @@ func (c *Client) Account() (*AccountData, error) {
 }
 
 func (c *Client) handleAPIErrorResponse(resp *http.Response, body []byte) error {
+	return apiErrorFromResponse(resp, body)
+}
+
+// apiErrorFromResponse builds the *APIError of an API answer that is not a success.
+func apiErrorFromResponse(resp *http.Response, body []byte) error {
 	statusCode := resp.StatusCode
 
 	var result ScrapeResult

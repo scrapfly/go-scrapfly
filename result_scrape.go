@@ -372,10 +372,14 @@ func (s *Screenshot) Image() ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	s.image, err = io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiErrorFromResponse(resp, body)
+	}
+	s.image = body
 	return s.image, nil
 }
 
@@ -393,10 +397,14 @@ func (a *Attachment) Data() ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	a.data, err = io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiErrorFromResponse(resp, body)
+	}
+	a.data = body
 	return a.data, nil
 }
 
