@@ -122,6 +122,12 @@ type CloudBrowserConfig struct {
 	// HITLAllowedNetworks lists source IPs / CIDRs trusted to attach to
 	// the HITL channels (VNC + WebRTC + downloads) without credentials.
 	HITLAllowedNetworks []string `json:"hitl_allowed_networks,omitempty"`
+
+	// DownloadsStream makes ScrapiumBrowser.getDownloads return large downloaded
+	// files as IO stream handles instead of inline base64: read them with
+	// CloudBrowserDownloads. See
+	// https://scrapfly.io/docs/cloud-browser-api/file-downloads#large-downloads
+	DownloadsStream bool `json:"downloads_stream,omitempty"`
 }
 
 // ProjectSalt returns the deterministic project salt for an api key
@@ -265,6 +271,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 		if len(config.HITLAllowedNetworks) > 0 {
 			params.Set("hitl_allowed_networks", strings.Join(config.HITLAllowedNetworks, ","))
+		}
+		if config.DownloadsStream {
+			params.Set("downloads_stream", "true")
 		}
 	}
 
