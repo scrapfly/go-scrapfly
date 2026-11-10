@@ -82,48 +82,29 @@ func (f ExtractionModel) IsValid() bool {
 	return IsValidEnumType(f)
 }
 
-// ProxyPool is the proxy_pool parameter of the Web Scraping API, the Crawler
-// and the Screenshot API: ProxyPoolBasic, ProxyPoolUnblocker,
-// ProxyPoolUnblockerUltra or ProxyPoolAuto, each of which sets both the
-// proxies and the Unblocker, or PublicTorPool, the Tor network. The Screenshot
-// API takes the first four and ignores any other value.
-//
-// The pool names written before the proxy pools (PublicDataCenterPool,
-// PublicResidentialPool) are still accepted. The migration guide covers them:
-// https://scrapfly.io/new-pricing#legacy-spellings
+// ProxyPool is the proxy_pool parameter of the Web Scraping API and the
+// Crawler: PublicDataCenterPool (the default), PublicResidentialPool or
+// PublicTorPool. The anti-bot bypass is a parameter of its own: Unblocker.
 type ProxyPool string
 
 // Proxy pools.
 const (
-	// ProxyPoolBasic runs on datacenter proxies with the Unblocker off.
-	ProxyPoolBasic ProxyPool = "basic"
-	// ProxyPoolUnblocker runs on residential proxies with the Unblocker
-	// (anti-bot bypass) on.
-	ProxyPoolUnblocker ProxyPool = "unblocker"
-	// ProxyPoolUnblockerUltra runs on residential proxies with the Unblocker
-	// on. It is the only pool accepted by the targets and anti-bot
-	// protections that have a price of their own: those refuse basic and
-	// unblocker with ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED (HTTP 422, not
-	// billed).
-	ProxyPoolUnblockerUltra ProxyPool = "unblocker_ultra"
-	// ProxyPoolAuto lets the API pick the pool before the request, from the
-	// target's profile: the Unblocker on datacenter proxies, or the pool the
-	// target needs. Accepted on every target, the ones that require
-	// ProxyPoolUnblockerUltra included, where their price is added; priced as
-	// the pool it runs on.
-	ProxyPoolAuto ProxyPool = "auto"
+	// PublicDataCenterPool routes through datacenter proxies, the default pool.
+	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
+	// PublicResidentialPool routes through residential proxies.
+	PublicResidentialPool ProxyPool = "public_residential_pool"
 	// PublicTorPool routes egress through the Tor network, the only pool that
 	// reaches .onion hidden services; also used for OSINT.
 	PublicTorPool ProxyPool = "public_tor_pool"
 )
 
-// Pool names written before the proxy pools, still accepted. The migration
-// guide covers them: https://scrapfly.io/new-pricing#legacy-spellings
+// Pool names the API does not accept yet: a request naming one fails with
+// ERR::PROXY::POOL_NOT_FOUND.
 const (
-	// PublicDataCenterPool is the former name of the datacenter pool.
-	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
-	// PublicResidentialPool is the former name of the residential pool.
-	PublicResidentialPool ProxyPool = "public_residential_pool"
+	ProxyPoolBasic          ProxyPool = "basic"
+	ProxyPoolUnblocker      ProxyPool = "unblocker"
+	ProxyPoolUnblockerUltra ProxyPool = "unblocker_ultra"
+	ProxyPoolAuto           ProxyPool = "auto"
 )
 
 func (f ProxyPool) Enum() []ProxyPool {
@@ -144,9 +125,8 @@ func (f ProxyPool) IsValid() bool {
 	return IsValidEnumType(f)
 }
 
-// IsLegacy reports whether f is one of the pool names written before the
-// proxy pools (PublicDataCenterPool, PublicResidentialPool). PublicTorPool is
-// not one: the Tor pool keeps its name.
+// IsLegacy reports whether f is PublicDataCenterPool or
+// PublicResidentialPool. PublicTorPool is not one.
 func (f ProxyPool) IsLegacy() bool {
 	switch f {
 	case PublicDataCenterPool, PublicResidentialPool:

@@ -21,7 +21,7 @@ import (
 //	config := &scrapfly.ScrapeConfig{
 //	    URL:       "https://example.com",
 //	    Country:   "us",
-//	    ProxyPool: scrapfly.ProxyPoolUnblocker,
+//	    Unblocker: scrapfly.BoolPtr(true),
 //	    Cache:     true,
 //	    Format:    scrapfly.FormatMarkdown,
 //	}
@@ -42,20 +42,12 @@ type ScrapeConfig struct {
 	// Country specifies the proxy country code (e.g., "us", "uk", "de").
 	// Supports ISO 3166-1 alpha-2 country codes.
 	Country string
-	// ProxyPool selects the proxy pool: ProxyPoolBasic (datacenter, Unblocker
-	// off), ProxyPoolUnblocker (residential, Unblocker on),
-	// ProxyPoolUnblockerUltra (residential, Unblocker on, the only pool the
-	// targets and anti-bot protections with a price of their own accept) or
-	// ProxyPoolAuto (the API picks the pool from the target's profile). Each
-	// sets the Unblocker itself. Empty sends no proxy_pool.
+	// ProxyPool selects the proxy pool: PublicDataCenterPool (the default),
+	// PublicResidentialPool or PublicTorPool. Empty sends no proxy_pool.
 	ProxyPool ProxyPool
 	// RenderJS enables JavaScript rendering using a headless browser.
 	RenderJS bool
 	// Unblocker turns the Unblocker (anti-bot bypass, formerly "ASP") on.
-	//
-	// Deprecated: use ProxyPool (ProxyPoolUnblockerUltra for the Unblocker).
-	// The migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings
 	//
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized as the "asp" query parameter — the wire key is unchanged.
@@ -73,12 +65,10 @@ type ScrapeConfig struct {
 	Unblocker *bool
 	// ASP enables the Unblocker (formerly Anti-Scraping Protection).
 	//
-	// Deprecated: use ProxyPool (ProxyPoolUnblockerUltra for the Unblocker).
-	// The migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings. When ASP is true it
-	// wins over Unblocker, because a plain bool cannot distinguish "unset"
-	// from "explicitly false" and honouring it is the only way an old caller
-	// keeps its feature.
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
 	// Cache enables response caching.
 	Cache bool

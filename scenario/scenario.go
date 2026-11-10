@@ -40,7 +40,7 @@
 //			URL: "https://example.com",
 //			RenderJS: true,
 //			Country: "us",
-//			ProxyPool: scrapfly.ProxyPoolUnblocker,
+//			Unblocker: scrapfly.BoolPtr(true),
 //			JSScenario: sc,
 //		}
 //	}

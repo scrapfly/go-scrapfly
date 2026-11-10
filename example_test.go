@@ -112,7 +112,7 @@ func Example_getAccount() {
 
 }
 
-// basicGet demonstrates basic scraping with cache and the Unblocker proxy pool
+// basicGet demonstrates basic scraping with cache and the Unblocker
 func Example_basicGet() {
 	apiKey := getApiKey()
 	client, err := scrapfly.New(apiKey)
@@ -122,9 +122,8 @@ func Example_basicGet() {
 
 	scrapeResult, err := client.Scrape(&scrapfly.ScrapeConfig{
 		URL: "https://httpbin.dev/html",
-		// Proxy pool: ProxyPoolBasic, ProxyPoolUnblocker (anti-bot bypass),
-		// ProxyPoolUnblockerUltra or ProxyPoolAuto.
-		ProxyPool: scrapfly.ProxyPoolUnblocker,
+		// anti-bot bypass
+		Unblocker: scrapfly.BoolPtr(true),
 		// server side cache - great for repeated requests
 		Cache:    true,
 		CacheTTL: 3600, // in seconds

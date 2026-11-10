@@ -47,9 +47,7 @@ func resolveUnblocker(asp bool, unblocker *bool) bool {
 }
 
 // UnblockerEnabled reports whether the anti-bot bypass will be requested — the
-// single resolved value that reaches the wire as "asp". When ProxyPool is
-// basic, unblocker, unblocker_ultra or auto, the API ignores that value and
-// takes the Unblocker from the pool.
+// single resolved value that reaches the wire as "asp".
 //
 // It exists because ASP and Unblocker are two independent exported fields
 // rather than one slot behind two names. Without it there is no way to read

@@ -75,28 +75,16 @@
 //	    AutoScroll:      true,
 //	}
 //
-// Proxy pools (anti-bot bypass):
+// Anti-bot bypass (the Unblocker) and proxy pools:
 //
 //	config := &scrapfly.ScrapeConfig{
 //	    URL:       "https://example.com",
-//	    ProxyPool: scrapfly.ProxyPoolUnblocker,
+//	    Unblocker: scrapfly.BoolPtr(true),
+//	    ProxyPool: scrapfly.PublicResidentialPool,
 //	}
 //
-// ProxyPoolBasic runs on datacenter proxies with the Unblocker off,
-// ProxyPoolUnblocker and ProxyPoolUnblockerUltra on residential proxies with
-// the Unblocker on. The targets and anti-bot protections that have a price of
-// their own accept ProxyPoolUnblockerUltra only and refuse the other two with
-// ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED (HTTP 422, not billed).
-// ProxyPoolAuto lets the API pick the pool before the request, from the
-// target's profile: the Unblocker on datacenter proxies, or the pool the
-// target needs. It is accepted on every target, the ones that require
-// ProxyPoolUnblockerUltra included, where their price is added, and is priced
-// as the pool it runs on.
-//
-// The Unblocker *bool and its alias ASP are deprecated: use ProxyPool
-// (ProxyPoolUnblockerUltra for the Unblocker). The migration guide covers
-// requests written before the proxy pools:
-// https://scrapfly.io/new-pricing#legacy-spellings
+// ProxyPool is PublicDataCenterPool (the default), PublicResidentialPool or
+// PublicTorPool. ASP is the deprecated alias of Unblocker.
 //
 // Taking Screenshots:
 //

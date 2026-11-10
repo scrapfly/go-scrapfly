@@ -37,9 +37,8 @@ func basicGet(apiKey string) {
 
 	scrapeResult, err := client.Scrape(&scrapfly.ScrapeConfig{
 		URL: "https://httpbin.dev/html",
-		// Proxy pool: ProxyPoolBasic, ProxyPoolUnblocker (anti-bot bypass),
-		// ProxyPoolUnblockerUltra or ProxyPoolAuto.
-		ProxyPool: scrapfly.ProxyPoolUnblocker,
+		// anti-bot bypass
+		Unblocker: scrapfly.BoolPtr(true),
 		// server side cache - great for repeated requests
 		Cache:    true,
 		CacheTTL: 3600, // in seconds

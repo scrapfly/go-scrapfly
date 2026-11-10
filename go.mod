@@ -4,6 +4,9 @@ go 1.24.0
 
 toolchain go1.24.7
 
+// Documents proxy pool names the API does not accept.
+retract v1.7.0
+
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/vmihailenco/msgpack/v5 v5.4.1

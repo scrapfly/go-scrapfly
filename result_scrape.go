@@ -261,13 +261,7 @@ type ProxyContext struct {
 	Country  string `json:"country"`
 	Identity string `json:"identity"`
 	Network  string `json:"network"`
-	// Pool, like ConfigData.ProxyPool, names the pool the request asked for
-	// the way the account reads it: Tor reads public_tor_pool and one of the
-	// account's own pools its name. Otherwise, when the Unblocker ran (asked,
-	// or forced by a target that requires it), basic and unblocker read
-	// unblocker and any other pool unblocker_ultra. Without the Unblocker a
-	// Scrapfly pool reads by its network (basic, unblocker, mobile, isp) and
-	// any other name as sent.
+	// Pool is the proxy pool the request ran on.
 	Pool string `json:"pool"`
 }
 

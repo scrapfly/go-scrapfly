@@ -84,11 +84,8 @@ type ScreenshotConfig struct {
 	// VisionDeficiencyType specifies the type of vision deficiency to simulate.
 	// see https://scrapfly.io/docs/screenshot-api/accessibility#vision_deficiency
 	VisionDeficiencyType VisionDeficiencyType
-	// ProxyPool is the proxy pool: ProxyPoolBasic, ProxyPoolUnblocker,
-	// ProxyPoolUnblockerUltra or ProxyPoolAuto. The Screenshot API takes these
-	// four only and ignores any other value. Empty sends no proxy_pool and the
-	// API's screenshot defaults apply. The screenshot price is the same on
-	// every pool, and a screenshot is never retried.
+	// ProxyPool is sent as proxy_pool. The Screenshot API picks its pool itself
+	// and ignores this value. Empty sends no proxy_pool.
 	ProxyPool ProxyPool
 }
 

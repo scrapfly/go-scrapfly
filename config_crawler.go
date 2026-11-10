@@ -155,10 +155,6 @@ type CrawlerConfig struct {
 
 	// Unblocker turns the Unblocker (anti-bot bypass, formerly "ASP") on.
 	//
-	// Deprecated: use ProxyPool ("unblocker_ultra" for the Unblocker). The
-	// migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings
-	//
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized into the POST /crawl body under the "asp" key — the wire key
 	// is unchanged.
@@ -176,16 +172,14 @@ type CrawlerConfig struct {
 	Unblocker *bool
 	// ASP enables the Unblocker (formerly Anti-Scraping Protection).
 	//
-	// Deprecated: use ProxyPool ("unblocker_ultra" for the Unblocker). The
-	// migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings. When ASP is true it
-	// wins over Unblocker, because a plain bool cannot distinguish "unset"
-	// from "explicitly false" and honouring it is the only way an old caller
-	// keeps its feature.
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
-	// ProxyPool is the proxy pool of every crawled page: "basic",
-	// "unblocker", "unblocker_ultra" or "auto" (string(ProxyPoolBasic), ...),
-	// each of which sets the Unblocker itself.
+	// ProxyPool is the proxy pool of every crawled page:
+	// "public_datacenter_pool" (the default), "public_residential_pool" or
+	// "public_tor_pool" (string(PublicDataCenterPool), ...).
 	ProxyPool string
 	Country   string
 
