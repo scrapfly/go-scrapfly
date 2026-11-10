@@ -93,12 +93,12 @@ func New(key string) (*Client, error) {
 //
 // Parameters:
 //   - key: Your Scrapfly API key
-//   - host: Custom API host URL (e.g., "https://custom-api.example.com")
+//   - host: Custom API host URL (e.g., "https://api.web-scraping.dev")
 //   - verifySSL: Whether to verify SSL certificates (set to false only for testing)
 //
 // Example:
 //
-//	client, err := scrapfly.NewWithHost("YOUR_API_KEY", "https://custom-api.example.com", true)
+//	client, err := scrapfly.NewWithHost("YOUR_API_KEY", "https://api.web-scraping.dev", true)
 func NewWithHost(key, host string, verifySSL bool) (*Client, error) {
 	if key == "" {
 		return nil, ErrBadAPIKey
@@ -179,7 +179,7 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error) {
 // Example:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:       "https://example.com",
+//	    URL:       "https://web-scraping.dev",
 //	    Country:   "us",
 //	    Unblocker: scrapfly.BoolPtr(true),
 //	}
@@ -395,9 +395,9 @@ type ConcurrentScrapeResult struct {
 // Example:
 //
 //	configs := []*scrapfly.ScrapeConfig{
-//	    {URL: "https://example.com/page1"},
-//	    {URL: "https://example.com/page2"},
-//	    {URL: "https://example.com/page3"},
+//	    {URL: "https://web-scraping.dev/page1"},
+//	    {URL: "https://web-scraping.dev/page2"},
+//	    {URL: "https://web-scraping.dev/page3"},
 //	}
 //	for item := range client.ConcurrentScrape(configs, 3) {
 //
@@ -531,7 +531,7 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
 // Example:
 //
 //	config := &scrapfly.ScreenshotConfig{
-//	    URL:        "https://example.com",
+//	    URL:        "https://web-scraping.dev",
 //	    Format:     scrapfly.FormatPNG,
 //	    Capture:    "fullpage",
 //	    Resolution: "1920x1080",

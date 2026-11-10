@@ -21,7 +21,7 @@ func makeStandardHAR() []byte {
 					"timings": {"dns": 5.0, "wait": 50.0, "receive": 68.4},
 					"request": {
 						"method": "GET",
-						"url": "https://example.com/page1",
+						"url": "https://web-scraping.dev/page1",
 						"headers": [
 							{"name": "Accept", "value": "text/html"},
 							{"name": "User-Agent", "value": "test/1.0"}
@@ -46,7 +46,7 @@ func makeStandardHAR() []byte {
 					"time": 50,
 					"request": {
 						"method": "POST",
-						"url": "https://example.com/api",
+						"url": "https://web-scraping.dev/api",
 						"headers": []
 					},
 					"response": {
@@ -79,7 +79,7 @@ func makeStreamingHAR() []byte {
 	{
 		"startedDateTime": "2026-01-01T00:00:00Z",
 		"time": 100,
-		"request": {"method": "GET", "url": "https://example.com/a", "headers": []},
+		"request": {"method": "GET", "url": "https://web-scraping.dev/a", "headers": []},
 		"response": {
 			"status": 200,
 			"statusText": "OK",
@@ -90,7 +90,7 @@ func makeStreamingHAR() []byte {
 	{
 		"startedDateTime": "2026-01-01T00:00:01Z",
 		"time": 200,
-		"request": {"method": "GET", "url": "https://example.com/b", "headers": []},
+		"request": {"method": "GET", "url": "https://web-scraping.dev/b", "headers": []},
 		"response": {
 			"status": 200,
 			"statusText": "OK",
@@ -133,7 +133,7 @@ func TestParseHAR_Streaming(t *testing.T) {
 		t.Errorf("creator: %v", archive.Creator())
 	}
 	urls := archive.URLs()
-	if len(urls) != 2 || urls[0] != "https://example.com/a" {
+	if len(urls) != 2 || urls[0] != "https://web-scraping.dev/a" {
 		t.Errorf("urls: %v", urls)
 	}
 }
@@ -163,7 +163,7 @@ func TestHarEntry_Accessors(t *testing.T) {
 	}
 
 	first := entries[0]
-	if first.URL() != "https://example.com/page1" {
+	if first.URL() != "https://web-scraping.dev/page1" {
 		t.Errorf("URL: %s", first.URL())
 	}
 	if first.Method() != "GET" {
@@ -218,7 +218,7 @@ func TestHarEntry_Base64Content(t *testing.T) {
 			"entries": [{
 				"startedDateTime": "2026-01-01T00:00:00Z",
 				"time": 1,
-				"request": {"method": "GET", "url": "https://example.com/img", "headers": []},
+				"request": {"method": "GET", "url": "https://web-scraping.dev/img", "headers": []},
 				"response": {
 					"status": 200, "statusText": "OK", "headers": [],
 					"content": {"size": 4, "mimeType": "image/png", "encoding": "base64", "text": "SGVsbG8="}
@@ -241,14 +241,14 @@ func TestHarEntry_Base64Content(t *testing.T) {
 
 func TestHarArchive_FindByURL(t *testing.T) {
 	archive, _ := ParseHAR(makeStandardHAR())
-	entry := archive.FindByURL("https://example.com/api")
+	entry := archive.FindByURL("https://web-scraping.dev/api")
 	if entry == nil {
 		t.Fatal("expected to find entry by URL")
 	}
 	if entry.Method() != "POST" {
 		t.Errorf("Method: %s", entry.Method())
 	}
-	missing := archive.FindByURL("https://example.com/nope")
+	missing := archive.FindByURL("https://web-scraping.dev/nope")
 	if missing != nil {
 		t.Error("expected nil for missing URL")
 	}
@@ -260,7 +260,7 @@ func TestHarArchive_FilterByStatus(t *testing.T) {
 	if len(notFound) != 1 {
 		t.Errorf("expected 1 404 entry, got %d", len(notFound))
 	}
-	if notFound[0].URL() != "https://example.com/api" {
+	if notFound[0].URL() != "https://web-scraping.dev/api" {
 		t.Errorf("404 URL: %s", notFound[0].URL())
 	}
 }

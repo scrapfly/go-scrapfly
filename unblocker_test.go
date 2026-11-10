@@ -89,7 +89,7 @@ func TestScrapeConfig_UnblockerEmitsAspWireKey(t *testing.T) {
 	for _, tc := range unblockerCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &ScrapeConfig{
-				URL:       "https://example.com",
+				URL:       "https://web-scraping.dev",
 				ASP:       tc.asp,
 				Unblocker: tc.unblocker,
 			}
@@ -124,7 +124,7 @@ func TestCrawlerConfig_UnblockerEmitsAspWireKey(t *testing.T) {
 	for _, tc := range unblockerCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &CrawlerConfig{
-				URL:       "https://example.com",
+				URL:       "https://web-scraping.dev",
 				ASP:       tc.asp,
 				Unblocker: tc.unblocker,
 			}
@@ -158,7 +158,7 @@ func TestCrawlerConfig_UnblockerEmitsAspWireKey(t *testing.T) {
 // the "config" part, so the wire key must survive there too.
 func TestCrawlerConfig_UnblockerEmitsAspWireKeyMultipart(t *testing.T) {
 	cfg := &CrawlerConfig{
-		URLList:   []string{"https://example.com/a", "https://example.com/b"},
+		URLList:   []string{"https://web-scraping.dev/a", "https://web-scraping.dev/b"},
 		Unblocker: BoolPtr(true),
 	}
 	body, contentType, err := cfg.toMultipartBody()
@@ -268,7 +268,7 @@ func TestCreateErrorFromResult_ASPCodeMatchesBothNames(t *testing.T) {
 // a reason unrelated to the rename.
 func unblockerParityScrapeBase() *ScrapeConfig {
 	return &ScrapeConfig{
-		URL:                "https://example.com/parity",
+		URL:                "https://web-scraping.dev/parity",
 		Country:            "us",
 		ProxyPool:          PublicResidentialPool,
 		RenderJS:           true,
@@ -309,7 +309,7 @@ func unblockerParityScrapeBase() *ScrapeConfig {
 // populated, neither anti-bot field set.
 func unblockerParityCrawlerBase() *CrawlerConfig {
 	return &CrawlerConfig{
-		URL:                       "https://example.com/parity",
+		URL:                       "https://web-scraping.dev/parity",
 		PageLimit:                 10,
 		MaxDepth:                  3,
 		MaxDuration:               600,
@@ -317,9 +317,9 @@ func unblockerParityCrawlerBase() *CrawlerConfig {
 		ExcludePaths:              []string{"/admin/*"},
 		IgnoreBasePathRestriction: true,
 		FollowExternalLinks:       true,
-		AllowedExternalDomains:    []string{"cdn.example.com"},
+		AllowedExternalDomains:    []string{"cdn.web-scraping.dev"},
 		FollowInternalSubdomains:  BoolPtr(false),
-		AllowedInternalSubdomains: []string{"blog.example.com"},
+		AllowedInternalSubdomains: []string{"blog.web-scraping.dev"},
 		Headers:                   map[string]string{"X-Custom": "v", "Accept": "text/html"},
 		Delay:                     1000,
 		UserAgent:                 "TestBot/1.0",
@@ -528,12 +528,12 @@ func TestUnblockerParity_CrawlerMultipart_WholeConfigPartIdentical(t *testing.T)
 		t.Run(pair.name, func(t *testing.T) {
 			legacyCfg := unblockerParityCrawlerBase()
 			legacyCfg.URL = ""
-			legacyCfg.URLList = []string{"https://example.com/a", "https://example.com/b"}
+			legacyCfg.URLList = []string{"https://web-scraping.dev/a", "https://web-scraping.dev/b"}
 			pair.legacyCrawler(legacyCfg)
 
 			modernCfg := unblockerParityCrawlerBase()
 			modernCfg.URL = ""
-			modernCfg.URLList = []string{"https://example.com/a", "https://example.com/b"}
+			modernCfg.URLList = []string{"https://web-scraping.dev/a", "https://web-scraping.dev/b"}
 			pair.modernCrawler(modernCfg)
 
 			legacy := unblockerParityMultipartConfig(t, legacyCfg)
@@ -561,7 +561,7 @@ func TestUnblockerParity_FullTruthTable_CrawlerMultipartWireKey(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			cfg := unblockerParityCrawlerBase()
 			cfg.URL = ""
-			cfg.URLList = []string{"https://example.com/a", "https://example.com/b"}
+			cfg.URLList = []string{"https://web-scraping.dev/a", "https://web-scraping.dev/b"}
 			cfg.ASP = row.asp
 			cfg.Unblocker = row.unblocker
 

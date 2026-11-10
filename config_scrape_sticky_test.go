@@ -23,7 +23,7 @@ func stickyParam(t *testing.T, cfg *ScrapeConfig) (string, bool) {
 }
 
 func TestSessionStickyProxyFalseIsSent(t *testing.T) {
-	cfg := &ScrapeConfig{URL: "https://example.com", Session: "s1", SessionStickyProxy: boolPtr(false)}
+	cfg := &ScrapeConfig{URL: "https://web-scraping.dev", Session: "s1", SessionStickyProxy: boolPtr(false)}
 	val, present := stickyParam(t, cfg)
 	if !present {
 		t.Fatal("session_sticky_proxy missing; explicit false must be sent")
@@ -34,7 +34,7 @@ func TestSessionStickyProxyFalseIsSent(t *testing.T) {
 }
 
 func TestSessionStickyProxyTrueIsSent(t *testing.T) {
-	cfg := &ScrapeConfig{URL: "https://example.com", Session: "s1", SessionStickyProxy: boolPtr(true)}
+	cfg := &ScrapeConfig{URL: "https://web-scraping.dev", Session: "s1", SessionStickyProxy: boolPtr(true)}
 	val, present := stickyParam(t, cfg)
 	if !present || val != "true" {
 		t.Fatalf("session_sticky_proxy = %q present=%v, want \"true\"", val, present)
@@ -43,14 +43,14 @@ func TestSessionStickyProxyTrueIsSent(t *testing.T) {
 
 func TestSessionStickyProxyNilDefersToServerDefault(t *testing.T) {
 	// nil = unset: don't send the param, let the API apply its default (true).
-	cfg := &ScrapeConfig{URL: "https://example.com", Session: "s1"}
+	cfg := &ScrapeConfig{URL: "https://web-scraping.dev", Session: "s1"}
 	if _, present := stickyParam(t, cfg); present {
 		t.Fatal("session_sticky_proxy must not be sent when unset (nil)")
 	}
 }
 
 func TestSessionStickyProxyOmittedWithoutSession(t *testing.T) {
-	cfg := &ScrapeConfig{URL: "https://example.com", SessionStickyProxy: boolPtr(true)}
+	cfg := &ScrapeConfig{URL: "https://web-scraping.dev", SessionStickyProxy: boolPtr(true)}
 	if _, present := stickyParam(t, cfg); present {
 		t.Fatal("session_sticky_proxy must not be sent when no session is set")
 	}

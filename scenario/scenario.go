@@ -37,7 +37,7 @@
 //
 //		// Now `sc` can be passed directly to the Scrapfly API client.
 //		scrapeConfig := &scrapfly.ScrapeConfig{
-//			URL: "https://example.com",
+//			URL: "https://web-scraping.dev",
 //			RenderJS: true,
 //			Country: "us",
 //			Unblocker: scrapfly.BoolPtr(true),

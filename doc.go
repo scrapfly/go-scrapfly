@@ -40,7 +40,7 @@
 //
 //	    // Configure the scrape request
 //	    config := &scrapfly.ScrapeConfig{
-//	        URL:      "https://example.com",
+//	        URL:      "https://web-scraping.dev",
 //	        RenderJS: true,
 //	        Country:  "us",
 //	    }
@@ -68,7 +68,7 @@
 // JavaScript Rendering:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:             "https://example.com",
+//	    URL:             "https://web-scraping.dev",
 //	    RenderJS:        true,
 //	    WaitForSelector: ".content",
 //	    RenderingWait:   2000,
@@ -78,7 +78,7 @@
 // Anti-bot bypass (the Unblocker) and proxy pools:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:       "https://example.com",
+//	    URL:       "https://web-scraping.dev",
 //	    Unblocker: scrapfly.BoolPtr(true),
 //	    ProxyPool: scrapfly.PublicResidentialPool,
 //	}
@@ -89,7 +89,7 @@
 // Taking Screenshots:
 //
 //	config := &scrapfly.ScreenshotConfig{
-//	    URL:        "https://example.com",
+//	    URL:        "https://web-scraping.dev",
 //	    Format:     scrapfly.FormatPNG,
 //	    Capture:    "fullpage",
 //	    Resolution: "1920x1080",
@@ -103,9 +103,9 @@
 // Concurrent Scraping:
 //
 //	configs := []*scrapfly.ScrapeConfig{
-//	    {URL: "https://example.com/page1"},
-//	    {URL: "https://example.com/page2"},
-//	    {URL: "https://example.com/page3"},
+//	    {URL: "https://web-scraping.dev/page1"},
+//	    {URL: "https://web-scraping.dev/page2"},
+//	    {URL: "https://web-scraping.dev/page3"},
 //	}
 //	resultsChan := client.ConcurrentScrape(configs, 3)
 //	for result := range resultsChan {
@@ -153,7 +153,7 @@
 // Enable debug mode in the API to access debug information in the dashboard:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:   "https://example.com",
+//	    URL:   "https://web-scraping.dev",
 //	    Debug: true,
 //	}
 //

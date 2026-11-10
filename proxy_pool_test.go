@@ -61,7 +61,7 @@ func TestProxyPoolEnumKeepsLegacyNames(t *testing.T) {
 // key of their own: the API takes the Unblocker from the pool.
 func TestScrapeConfigSendsPoolWithoutASP(t *testing.T) {
 	for _, pool := range []ProxyPool{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto} {
-		params, err := (&ScrapeConfig{URL: "https://example.com", ProxyPool: pool}).toAPIParamsWithValidation()
+		params, err := (&ScrapeConfig{URL: "https://web-scraping.dev", ProxyPool: pool}).toAPIParamsWithValidation()
 		if err != nil {
 			t.Fatalf("toAPIParamsWithValidation: %v", err)
 		}
@@ -72,7 +72,7 @@ func TestScrapeConfigSendsPoolWithoutASP(t *testing.T) {
 			t.Errorf("pool %q emitted asp=%q", pool, params.Get("asp"))
 		}
 	}
-	params, err := (&ScrapeConfig{URL: "https://example.com"}).toAPIParamsWithValidation()
+	params, err := (&ScrapeConfig{URL: "https://web-scraping.dev"}).toAPIParamsWithValidation()
 	if err != nil {
 		t.Fatalf("toAPIParamsWithValidation: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestScrapeConfigSendsPoolWithoutASP(t *testing.T) {
 
 func TestCrawlerConfigSendsPoolWithoutASP(t *testing.T) {
 	for _, pool := range []ProxyPool{ProxyPoolUnblockerUltra, ProxyPoolAuto} {
-		body := (&CrawlerConfig{URL: "https://example.com", ProxyPool: string(pool)}).buildBodyMap()
+		body := (&CrawlerConfig{URL: "https://web-scraping.dev", ProxyPool: string(pool)}).buildBodyMap()
 		if got := body["proxy_pool"]; got != string(pool) {
 			t.Errorf("proxy_pool = %v, want %s", got, pool)
 		}
@@ -122,7 +122,7 @@ func TestScrapeResultDecodesCustomerPoolName(t *testing.T) {
 
 func TestScreenshotConfigSendsProxyPool(t *testing.T) {
 	for _, pool := range []ProxyPool{ProxyPoolBasic, ProxyPoolUnblocker, ProxyPoolUnblockerUltra, ProxyPoolAuto} {
-		params, err := (&ScreenshotConfig{URL: "https://example.com", ProxyPool: pool}).toAPIParams()
+		params, err := (&ScreenshotConfig{URL: "https://web-scraping.dev", ProxyPool: pool}).toAPIParams()
 		if err != nil {
 			t.Fatalf("toAPIParams: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestScreenshotConfigSendsProxyPool(t *testing.T) {
 			t.Errorf("proxy_pool = %q, want %q", got, pool)
 		}
 	}
-	params, err := (&ScreenshotConfig{URL: "https://example.com"}).toAPIParams()
+	params, err := (&ScreenshotConfig{URL: "https://web-scraping.dev"}).toAPIParams()
 	if err != nil {
 		t.Fatalf("toAPIParams: %v", err)
 	}

@@ -474,7 +474,7 @@ func (c *CrawlerConfig) validateBounds() error {
 // BoolPtr is a tiny helper for constructing *bool tri-state fields.
 //
 //	config := &scrapfly.CrawlerConfig{
-//	    URL:               "https://example.com",
+//	    URL:               "https://web-scraping.dev",
 //	    RespectRobotsTxt:  scrapfly.BoolPtr(false),
 //	    FollowInternalSubdomains: scrapfly.BoolPtr(true),
 //	}

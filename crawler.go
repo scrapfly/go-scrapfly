@@ -265,7 +265,7 @@ type CrawlContentsOptions struct {
 // Example:
 //
 //	contents, err := client.CrawlContentsJSON(uuid, scrapfly.CrawlerFormatMarkdown, nil)
-//	md, err := client.CrawlContentsPlain(uuid, "https://example.com/page", scrapfly.CrawlerFormatMarkdown)
+//	md, err := client.CrawlContentsPlain(uuid, "https://web-scraping.dev/page", scrapfly.CrawlerFormatMarkdown)
 func (c *Client) CrawlContentsJSON(uuid string, format CrawlerContentFormat, opts *CrawlContentsOptions) (*CrawlerContents, error) {
 	if opts == nil {
 		opts = &CrawlContentsOptions{}

@@ -21,7 +21,7 @@ func makeWARC() []byte {
 	// WARC record envelope
 	warcHeaders := "WARC/1.0\r\n" +
 		"WARC-Type: response\r\n" +
-		"WARC-Target-URI: https://example.com/page\r\n" +
+		"WARC-Target-URI: https://web-scraping.dev/page\r\n" +
 		"WARC-Date: 2026-01-01T00:00:00Z\r\n" +
 		"WARC-Record-ID: <urn:uuid:11111111-2222-3333-4444-555555555555>\r\n" +
 		"Content-Type: application/http; msgtype=response\r\n"
@@ -62,9 +62,9 @@ func makeMultiRecordWARC() []byte {
 	}
 
 	return []byte(
-		build("response", "https://example.com/page1", page1Body) +
-			build("response", "https://example.com/page2", page2Body) +
-			build("metadata", "https://example.com/page1", metadataBody),
+		build("response", "https://web-scraping.dev/page1", page1Body) +
+			build("response", "https://web-scraping.dev/page2", page2Body) +
+			build("metadata", "https://web-scraping.dev/page1", metadataBody),
 	)
 }
 
@@ -122,7 +122,7 @@ func TestWarcParser_IterRecordsYieldsResponse(t *testing.T) {
 		if r.RecordType != "response" {
 			t.Errorf("expected response, got %s", r.RecordType)
 		}
-		if r.URL != "https://example.com/page" {
+		if r.URL != "https://web-scraping.dev/page" {
 			t.Errorf("URL: %s", r.URL)
 		}
 		if r.StatusCode != 200 {
@@ -154,7 +154,7 @@ func TestWarcParser_GetPages(t *testing.T) {
 	if len(pages) != 2 {
 		t.Fatalf("expected 2 pages, got %d", len(pages))
 	}
-	if pages[0].URL != "https://example.com/page1" {
+	if pages[0].URL != "https://web-scraping.dev/page1" {
 		t.Errorf("page 0 URL: %s", pages[0].URL)
 	}
 	if pages[0].StatusCode != 200 {
@@ -163,7 +163,7 @@ func TestWarcParser_GetPages(t *testing.T) {
 	if !bytes.Contains(pages[0].Content, []byte("page1")) {
 		t.Errorf("page 0 body: %q", string(pages[0].Content))
 	}
-	if pages[1].URL != "https://example.com/page2" {
+	if pages[1].URL != "https://web-scraping.dev/page2" {
 		t.Errorf("page 1 URL: %s", pages[1].URL)
 	}
 }

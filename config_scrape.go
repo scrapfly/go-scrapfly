@@ -19,7 +19,7 @@ import (
 // Example:
 //
 //	config := &scrapfly.ScrapeConfig{
-//	    URL:       "https://example.com",
+//	    URL:       "https://web-scraping.dev",
 //	    Country:   "us",
 //	    Unblocker: scrapfly.BoolPtr(true),
 //	    Cache:     true,

@@ -28,7 +28,7 @@ func TestCrawlerConfig_RequiredURL(t *testing.T) {
 }
 
 func TestCrawlerConfig_MinimalConfigOnlyHasURL(t *testing.T) {
-	config := &CrawlerConfig{URL: "https://example.com"}
+	config := &CrawlerConfig{URL: "https://web-scraping.dev"}
 	body, err := config.toJSONBody()
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestCrawlerConfig_MinimalConfigOnlyHasURL(t *testing.T) {
 	_ = json.Unmarshal(body, &decoded)
 
 	// URL is present.
-	if decoded["url"] != "https://example.com" {
+	if decoded["url"] != "https://web-scraping.dev" {
 		t.Errorf("url not set: %v", decoded["url"])
 	}
 	// Every optional field is absent so the server applies its own defaults.
@@ -57,7 +57,7 @@ func TestCrawlerConfig_MinimalConfigOnlyHasURL(t *testing.T) {
 
 func TestCrawlerConfig_AllFieldsSerialize(t *testing.T) {
 	config := &CrawlerConfig{
-		URL:                       "https://example.com",
+		URL:                       "https://web-scraping.dev",
 		PageLimit:                 10,
 		MaxDepth:                  3,
 		MaxDuration:               600,
@@ -65,9 +65,9 @@ func TestCrawlerConfig_AllFieldsSerialize(t *testing.T) {
 		ExcludePaths:              []string{"/admin/*"},
 		IgnoreBasePathRestriction: true,
 		FollowExternalLinks:       true,
-		AllowedExternalDomains:    []string{"cdn.example.com"},
+		AllowedExternalDomains:    []string{"cdn.web-scraping.dev"},
 		FollowInternalSubdomains:  BoolPtr(false),
-		AllowedInternalSubdomains: []string{"blog.example.com"},
+		AllowedInternalSubdomains: []string{"blog.web-scraping.dev"},
 		Headers:                   map[string]string{"X-Custom": "v"},
 		Delay:                     1000,
 		UserAgent:                 "TestBot/1.0",
@@ -116,7 +116,7 @@ func TestCrawlerConfig_AllFieldsSerialize(t *testing.T) {
 
 func TestCrawlerConfig_ExcludeAndIncludeAreMutuallyExclusive(t *testing.T) {
 	config := &CrawlerConfig{
-		URL:              "https://example.com",
+		URL:              "https://web-scraping.dev",
 		ExcludePaths:     []string{"/a/*"},
 		IncludeOnlyPaths: []string{"/b/*"},
 	}
@@ -144,7 +144,7 @@ func TestCrawlerConfig_RenderingDelayBounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			config := &CrawlerConfig{URL: "https://example.com", RenderingDelay: tc.value}
+			config := &CrawlerConfig{URL: "https://web-scraping.dev", RenderingDelay: tc.value}
 			_, err := config.toJSONBody()
 			if tc.valid && err != nil {
 				t.Errorf("expected valid, got error: %v", err)
@@ -171,7 +171,7 @@ func TestCrawlerConfig_MaxDurationBounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			config := &CrawlerConfig{URL: "https://example.com", MaxDuration: tc.value}
+			config := &CrawlerConfig{URL: "https://web-scraping.dev", MaxDuration: tc.value}
 			_, err := config.toJSONBody()
 			if tc.valid && err != nil {
 				t.Errorf("expected valid, got error: %v", err)
@@ -188,7 +188,7 @@ func TestCrawlerConfig_ArraySizeLimits(t *testing.T) {
 	for i := range exceed {
 		exceed[i] = "/p"
 	}
-	config := &CrawlerConfig{URL: "https://example.com", ExcludePaths: exceed}
+	config := &CrawlerConfig{URL: "https://web-scraping.dev", ExcludePaths: exceed}
 	_, err := config.toJSONBody()
 	if err == nil {
 		t.Fatal("expected size-limit error for exclude_paths")
@@ -197,7 +197,7 @@ func TestCrawlerConfig_ArraySizeLimits(t *testing.T) {
 
 func TestCrawlerConfig_InvalidContentFormat(t *testing.T) {
 	config := &CrawlerConfig{
-		URL:            "https://example.com",
+		URL:            "https://web-scraping.dev",
 		ContentFormats: []CrawlerContentFormat{"pdf"},
 	}
 	_, err := config.toJSONBody()
@@ -208,7 +208,7 @@ func TestCrawlerConfig_InvalidContentFormat(t *testing.T) {
 
 func TestCrawlerConfig_InvalidWebhookEvent(t *testing.T) {
 	config := &CrawlerConfig{
-		URL:           "https://example.com",
+		URL:           "https://web-scraping.dev",
 		WebhookEvents: []CrawlerWebhookEvent{"crawl.started"},
 	}
 	_, err := config.toJSONBody()
@@ -219,7 +219,7 @@ func TestCrawlerConfig_InvalidWebhookEvent(t *testing.T) {
 
 func TestCrawlerConfig_AllValidWebhookEvents(t *testing.T) {
 	config := &CrawlerConfig{
-		URL: "https://example.com",
+		URL: "https://web-scraping.dev",
 		WebhookEvents: []CrawlerWebhookEvent{
 			WebhookCrawlerStarted,
 			WebhookCrawlerURLVisited,
@@ -240,7 +240,7 @@ func TestCrawlerConfig_AllValidWebhookEvents(t *testing.T) {
 }
 
 func TestCrawlerConfig_SearchSerializes(t *testing.T) {
-	body, err := (&CrawlerConfig{URL: "https://example.com", Search: true}).toJSONBody()
+	body, err := (&CrawlerConfig{URL: "https://web-scraping.dev", Search: true}).toJSONBody()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestCrawlerConfig_SearchSerializes(t *testing.T) {
 
 func TestCrawlerConfig_SearchOmittedWhenOff(t *testing.T) {
 	// Unset means server default: never emit a field to send its default.
-	body, err := (&CrawlerConfig{URL: "https://example.com"}).toJSONBody()
+	body, err := (&CrawlerConfig{URL: "https://web-scraping.dev"}).toJSONBody()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,12 +455,12 @@ func TestParseCrawlerStatus_MissingStateCounter(t *testing.T) {
 // ==============================================================================
 
 func TestParseCrawlerURLs_Visited(t *testing.T) {
-	body := "https://example.com/a\nhttps://example.com/b\nhttps://example.com/c\n"
+	body := "https://web-scraping.dev/a\nhttps://web-scraping.dev/b\nhttps://web-scraping.dev/c\n"
 	urls := parseCrawlerURLs(body, "visited", 1, 100)
 	if len(urls.URLs) != 3 {
 		t.Fatalf("expected 3 urls, got %d", len(urls.URLs))
 	}
-	if urls.URLs[0].URL != "https://example.com/a" {
+	if urls.URLs[0].URL != "https://web-scraping.dev/a" {
 		t.Errorf("first url: %s", urls.URLs[0].URL)
 	}
 	if urls.URLs[0].Status != "visited" {
@@ -472,7 +472,7 @@ func TestParseCrawlerURLs_Visited(t *testing.T) {
 }
 
 func TestParseCrawlerURLs_FailedWithReason(t *testing.T) {
-	body := "https://example.com/404,page_limit\nhttps://example.com/500,crawler_error\n"
+	body := "https://web-scraping.dev/404,page_limit\nhttps://web-scraping.dev/500,crawler_error\n"
 	urls := parseCrawlerURLs(body, "failed", 1, 100)
 	if len(urls.URLs) != 2 {
 		t.Fatalf("expected 2 urls, got %d", len(urls.URLs))
@@ -480,13 +480,13 @@ func TestParseCrawlerURLs_FailedWithReason(t *testing.T) {
 	if urls.URLs[0].Reason != "page_limit" {
 		t.Errorf("reason: %s", urls.URLs[0].Reason)
 	}
-	if urls.URLs[1].URL != "https://example.com/500" {
+	if urls.URLs[1].URL != "https://web-scraping.dev/500" {
 		t.Errorf("second url: %s", urls.URLs[1].URL)
 	}
 }
 
 func TestParseCrawlerURLs_BlankLinesIgnored(t *testing.T) {
-	body := "\nhttps://example.com/a\n\n\nhttps://example.com/b\n\n"
+	body := "\nhttps://web-scraping.dev/a\n\n\nhttps://web-scraping.dev/b\n\n"
 	urls := parseCrawlerURLs(body, "visited", 1, 100)
 	if len(urls.URLs) != 2 {
 		t.Fatalf("expected 2 urls, got %d", len(urls.URLs))
@@ -494,12 +494,12 @@ func TestParseCrawlerURLs_BlankLinesIgnored(t *testing.T) {
 }
 
 func TestParseCrawlerURLs_CRLFTrimmed(t *testing.T) {
-	body := "https://example.com/a  \r\n  https://example.com/b\r\n"
+	body := "https://web-scraping.dev/a  \r\n  https://web-scraping.dev/b\r\n"
 	urls := parseCrawlerURLs(body, "visited", 1, 100)
 	if len(urls.URLs) != 2 {
 		t.Fatalf("expected 2 urls, got %d", len(urls.URLs))
 	}
-	if urls.URLs[0].URL != "https://example.com/a" {
+	if urls.URLs[0].URL != "https://web-scraping.dev/a" {
 		t.Errorf("expected trimmed url, got %q", urls.URLs[0].URL)
 	}
 }
@@ -521,8 +521,8 @@ func TestParseCrawlerURLs_EmptyBody(t *testing.T) {
 func TestParseCrawlerContents_Happy(t *testing.T) {
 	body := []byte(`{
 		"contents": {
-			"https://example.com/a": {"markdown": "# A"},
-			"https://example.com/b": {"markdown": "# B"}
+			"https://web-scraping.dev/a": {"markdown": "# A"},
+			"https://web-scraping.dev/b": {"markdown": "# B"}
 		},
 		"links": {"next": null, "prev": null}
 	}`)
@@ -600,7 +600,7 @@ func TestClient_StartCrawl_401ReturnsAPIError(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error_id": "x", "http_code": 401, "message": "Invalid API key"}`))
 	})
-	_, err := client.StartCrawl(&CrawlerConfig{URL: "https://example.com"})
+	_, err := client.StartCrawl(&CrawlerConfig{URL: "https://web-scraping.dev"})
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
@@ -616,7 +616,7 @@ func TestClient_StartCrawl_CrawlerResourceErrorWraps(t *testing.T) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(`{"error_id": "x", "http_code": 422, "code": "ERR::CRAWLER::HIGH_FAILURE_RATE", "message": "high failure rate"}`))
 	})
-	_, err := client.StartCrawl(&CrawlerConfig{URL: "https://example.com"})
+	_, err := client.StartCrawl(&CrawlerConfig{URL: "https://web-scraping.dev"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -668,7 +668,7 @@ func TestClient_CrawlURLs_StreamingText(t *testing.T) {
 			t.Errorf("page query: %s", r.URL.Query().Get("page"))
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("https://example.com/a\nhttps://example.com/b\n"))
+		_, _ = w.Write([]byte("https://web-scraping.dev/a\nhttps://web-scraping.dev/b\n"))
 	})
 	urls, err := client.CrawlURLs("abc-123", &CrawlURLsOptions{
 		Status:  "visited",
@@ -689,7 +689,7 @@ func TestClient_CrawlURLs_StreamingText(t *testing.T) {
 func TestClient_CrawlURLs_FailedWithReason(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("https://example.com/404,page_limit\n"))
+		_, _ = w.Write([]byte("https://web-scraping.dev/404,page_limit\n"))
 	})
 	urls, err := client.CrawlURLs("abc-123", &CrawlURLsOptions{Status: "failed"})
 	if err != nil {
@@ -729,7 +729,7 @@ func TestClient_CrawlContentsJSON(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"contents": {"https://example.com/p1": {"markdown": "# Page 1"}},
+			"contents": {"https://web-scraping.dev/p1": {"markdown": "# Page 1"}},
 			"links": {"next": null, "prev": null}
 		}`))
 	})
@@ -765,13 +765,13 @@ func TestClient_CrawlContentsPlain(t *testing.T) {
 		if r.URL.Query().Get("plain") != "true" {
 			t.Error("plain should be true")
 		}
-		if r.URL.Query().Get("url") != "https://example.com/p1" {
+		if r.URL.Query().Get("url") != "https://web-scraping.dev/p1" {
 			t.Error("url should be set")
 		}
 		w.Header().Set("Content-Type", "text/markdown")
 		_, _ = w.Write([]byte("# Page 1 markdown content"))
 	})
-	result, err := client.CrawlContentsPlain("abc-123", "https://example.com/p1", CrawlerFormatMarkdown)
+	result, err := client.CrawlContentsPlain("abc-123", "https://web-scraping.dev/p1", CrawlerFormatMarkdown)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -795,12 +795,12 @@ func TestClient_CrawlContentsBatch_ParsesMultipart(t *testing.T) {
 	multipartBody := strings.Join([]string{
 		"--" + boundary,
 		"Content-Type: text/markdown",
-		"Content-Location: https://example.com/page1",
+		"Content-Location: https://web-scraping.dev/page1",
 		"",
 		"# Page 1",
 		"--" + boundary,
 		"Content-Type: text/markdown",
-		"Content-Location: https://example.com/page2",
+		"Content-Location: https://web-scraping.dev/page2",
 		"",
 		"# Page 2",
 		"--" + boundary + "--",
@@ -815,7 +815,7 @@ func TestClient_CrawlContentsBatch_ParsesMultipart(t *testing.T) {
 			t.Errorf("formats: %s", r.URL.Query().Get("formats"))
 		}
 		bodyBytes, _ := io.ReadAll(r.Body)
-		if string(bodyBytes) != "https://example.com/page1\nhttps://example.com/page2" {
+		if string(bodyBytes) != "https://web-scraping.dev/page1\nhttps://web-scraping.dev/page2" {
 			t.Errorf("body: %q", string(bodyBytes))
 		}
 		w.Header().Set("Content-Type", "multipart/related; boundary="+boundary)
@@ -823,17 +823,17 @@ func TestClient_CrawlContentsBatch_ParsesMultipart(t *testing.T) {
 	})
 	result, err := client.CrawlContentsBatch(
 		"abc-123",
-		[]string{"https://example.com/page1", "https://example.com/page2"},
+		[]string{"https://web-scraping.dev/page1", "https://web-scraping.dev/page2"},
 		[]CrawlerContentFormat{CrawlerFormatMarkdown},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["https://example.com/page1"]["markdown"] != "# Page 1" {
-		t.Errorf("page1: %q", result["https://example.com/page1"]["markdown"])
+	if result["https://web-scraping.dev/page1"]["markdown"] != "# Page 1" {
+		t.Errorf("page1: %q", result["https://web-scraping.dev/page1"]["markdown"])
 	}
-	if result["https://example.com/page2"]["markdown"] != "# Page 2" {
-		t.Errorf("page2: %q", result["https://example.com/page2"]["markdown"])
+	if result["https://web-scraping.dev/page2"]["markdown"] != "# Page 2" {
+		t.Errorf("page2: %q", result["https://web-scraping.dev/page2"]["markdown"])
 	}
 }
 
@@ -849,7 +849,7 @@ func TestClient_CrawlContentsBatch_Over100URLsReturnsError(t *testing.T) {
 	client := newTestClient(t, nil)
 	urls := make([]string, 101)
 	for i := range urls {
-		urls[i] = "https://example.com/p"
+		urls[i] = "https://web-scraping.dev/p"
 	}
 	_, err := client.CrawlContentsBatch("abc-123", urls, []CrawlerContentFormat{CrawlerFormatMarkdown})
 	if err == nil {
@@ -944,7 +944,7 @@ func TestCrawl_Cancel_DelegatesToClient(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{}`))
 	})
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	if err := crawl.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -958,7 +958,7 @@ func TestCrawl_Cancel_DelegatesToClient(t *testing.T) {
 
 func TestCrawl_Cancel_NotStartedReturnsError(t *testing.T) {
 	client, _ := New("__API_KEY__")
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	if err := crawl.Cancel(); !errors.Is(err, ErrCrawlerNotStarted) {
 		t.Errorf("expected ErrCrawlerNotStarted, got %v", err)
 	}
@@ -988,7 +988,7 @@ func TestCrawl_StartOnceThenError(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"crawler_uuid": "abc", "status": "PENDING"}`))
 	})
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	if crawl.Started() {
 		t.Error("should not be started yet")
 	}
@@ -1009,7 +1009,7 @@ func TestCrawl_StartOnceThenError(t *testing.T) {
 
 func TestCrawl_MethodsErrorBeforeStart(t *testing.T) {
 	client, _ := New("__API_KEY__")
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	if _, err := crawl.Status(true); !errors.Is(err, ErrCrawlerNotStarted) {
 		t.Errorf("Status: %v", err)
 	}
@@ -1054,7 +1054,7 @@ func TestCrawl_Wait_TerminalSuccess(t *testing.T) {
 			}
 		}`))
 	})
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	if err := crawl.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1086,7 +1086,7 @@ func TestCrawl_Wait_TimeoutReturnsError(t *testing.T) {
 			}
 		}`))
 	})
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com"})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev"})
 	_ = crawl.Start()
 	err := crawl.Wait(&WaitOptions{
 		PollInterval: 20 * time.Millisecond,
@@ -1144,7 +1144,7 @@ const searchEnvelope = `{
     "score": 0.927,
     "scores": {"vector": 0.91, "fts": 12.4, "rrf": 0.0312},
     "crawler_uuid": "0198aaaa",
-    "url": "https://example.com/foo",
+    "url": "https://web-scraping.dev/foo",
     "title": "Foo Product",
     "source_format": "markdown",
     "content_type": "application/markdown",
@@ -1186,7 +1186,7 @@ func TestClient_CrawlsSearch_POSTsCollectionBody(t *testing.T) {
 	res, err := client.CrawlsSearch([]string{"0198aaaa", "0198bbbb"}, "TLS fingerprint", &CrawlSearchOptions{
 		Limit:   20,
 		Mode:    CrawlerSearchModeHybrid,
-		Filters: map[string]interface{}{"url_prefix": "https://example.com/docs/"},
+		Filters: map[string]interface{}{"url_prefix": "https://web-scraping.dev/docs/"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1206,14 +1206,14 @@ func TestClient_CrawlsSearch_POSTsCollectionBody(t *testing.T) {
 		t.Errorf("mode: %v", got["mode"])
 	}
 	filters, _ := got["filters"].(map[string]interface{})
-	if filters["url_prefix"] != "https://example.com/docs/" {
+	if filters["url_prefix"] != "https://web-scraping.dev/docs/" {
 		t.Errorf("filters: %v", got["filters"])
 	}
 
 	if !res.IsExact() {
 		t.Errorf("completeness: %s", res.Completeness)
 	}
-	if len(res.Results) != 1 || res.Results[0].URL != "https://example.com/foo" {
+	if len(res.Results) != 1 || res.Results[0].URL != "https://web-scraping.dev/foo" {
 		t.Fatalf("results: %+v", res.Results)
 	}
 	if res.Results[0].Scores.RRF != 0.0312 {
@@ -1304,7 +1304,7 @@ func TestParseCrawlerSearch_SingleLegHitKeepsNullsDistinct(t *testing.T) {
 	  "results": [{
 	    "rank": 1, "score": 0.03,
 	    "scores": {"vector": 0.91, "fts": null, "rrf": 0.03},
-	    "crawler_uuid": "0198aaaa", "url": "https://example.com/foo", "title": "Foo",
+	    "crawler_uuid": "0198aaaa", "url": "https://web-scraping.dev/foo", "title": "Foo",
 	    "source_format": "markdown", "content_type": "application/markdown",
 	    "chunk_id": 0, "text": "the matched chunk",
 	    "warc_offset": null, "warc_end": null,
@@ -1403,7 +1403,7 @@ func TestClient_CrawlsPrompt_StreamsFrames(t *testing.T) {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(bodyBytes, &got)
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("event: source\ndata: {\"id\":1,\"crawler_uuid\":\"0198aaaa\",\"url\":\"https://example.com/foo\",\"score\":0.92}\n\n" +
+		_, _ = w.Write([]byte("event: source\ndata: {\"id\":1,\"crawler_uuid\":\"0198aaaa\",\"url\":\"https://web-scraping.dev/foo\",\"score\":0.92}\n\n" +
 			":keepalive\n\n" +
 			"event: token\ndata: \"The\"\n\n" +
 			"event: token\ndata: \" answer\"\n\n" +
@@ -1451,7 +1451,7 @@ func TestClient_CrawlsPrompt_StreamsFrames(t *testing.T) {
 	if answer.String() != "The answer" {
 		t.Errorf("answer: %q", answer.String())
 	}
-	if len(sources) != 1 || sources[0].URL != "https://example.com/foo" {
+	if len(sources) != 1 || sources[0].URL != "https://web-scraping.dev/foo" {
 		t.Errorf("sources: %+v", sources)
 	}
 	if len(done.SourcesUsed) != 1 || done.SourcesUsed[0] != 1 {
@@ -1590,7 +1590,7 @@ func TestCrawl_SearchAndPrompt_DelegateToClient(t *testing.T) {
 		}
 	})
 
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Search: true})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev", Search: true})
 	if err := crawl.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1607,7 +1607,7 @@ func TestCrawl_SearchAndPrompt_DelegateToClient(t *testing.T) {
 
 func TestCrawl_SearchAndPrompt_NotStartedReturnError(t *testing.T) {
 	client, _ := New("__API_KEY__")
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Search: true})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev", Search: true})
 
 	if _, err := crawl.Search("q", nil); !errors.Is(err, ErrCrawlerNotStarted) {
 		t.Errorf("Search: %v", err)
@@ -1740,13 +1740,13 @@ const refreshEnvelope = `{
      "unchanged": 412, "failed": 0, "duration_ms": 41200, "search_status": "READY"},
     {"at": "2026-09-01T04:00:00Z", "generation": 2, "added": 3, "updated": 7, "removed": 1,
      "unchanged": 404, "failed": 0, "duration_ms": 44900, "search_status": "READY",
-     "sample_updated": ["https://example.com/pricing"],
-     "sample_removed": ["https://example.com/old"]}
+     "sample_updated": ["https://web-scraping.dev/pricing"],
+     "sample_removed": ["https://web-scraping.dev/old"]}
   ]
 }`
 
 func TestCrawlerConfig_RefreshSerializes(t *testing.T) {
-	body, err := (&CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: 86400}).toJSONBody()
+	body, err := (&CrawlerConfig{URL: "https://web-scraping.dev", Refresh: true, RefreshInterval: 86400}).toJSONBody()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1764,7 +1764,7 @@ func TestCrawlerConfig_RefreshSerializes(t *testing.T) {
 
 func TestCrawlerConfig_RefreshOmittedWhenOff(t *testing.T) {
 	// Unset means server default: never emit a field to send its default.
-	body, err := (&CrawlerConfig{URL: "https://example.com"}).toJSONBody()
+	body, err := (&CrawlerConfig{URL: "https://web-scraping.dev"}).toJSONBody()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1782,19 +1782,19 @@ func TestCrawlerConfig_RefreshOmittedWhenOff(t *testing.T) {
 
 func TestCrawlerConfig_RefreshIntervalBounds(t *testing.T) {
 	for _, interval := range []int{1, CrawlerRefreshMinInterval - 1, CrawlerRefreshMaxInterval + 1} {
-		config := &CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: interval}
+		config := &CrawlerConfig{URL: "https://web-scraping.dev", Refresh: true, RefreshInterval: interval}
 		if _, err := config.toJSONBody(); !errors.Is(err, ErrCrawlerConfig) {
 			t.Errorf("interval %d accepted: %v", interval, err)
 		}
 	}
 	for _, interval := range []int{CrawlerRefreshMinInterval, 86400, CrawlerRefreshMaxInterval} {
-		config := &CrawlerConfig{URL: "https://example.com", Refresh: true, RefreshInterval: interval}
+		config := &CrawlerConfig{URL: "https://web-scraping.dev", Refresh: true, RefreshInterval: interval}
 		if _, err := config.toJSONBody(); err != nil {
 			t.Errorf("interval %d rejected: %v", interval, err)
 		}
 	}
 	// A period with the feature off would silently never run.
-	orphan := &CrawlerConfig{URL: "https://example.com", RefreshInterval: 86400}
+	orphan := &CrawlerConfig{URL: "https://web-scraping.dev", RefreshInterval: 86400}
 	if _, err := orphan.toJSONBody(); !errors.Is(err, ErrCrawlerConfig) {
 		t.Errorf("interval without Refresh accepted: %v", err)
 	}
@@ -1830,7 +1830,7 @@ func TestClient_CrawlRefreshNow_POSTsToTheCrawl(t *testing.T) {
 	if last == nil || last.Updated != 7 || last.Changed() != 11 {
 		t.Fatalf("last run: %+v", last)
 	}
-	if len(last.SampleRemoved) != 1 || last.SampleRemoved[0] != "https://example.com/old" {
+	if len(last.SampleRemoved) != 1 || last.SampleRemoved[0] != "https://web-scraping.dev/old" {
 		t.Errorf("sample_removed: %v", last.SampleRemoved)
 	}
 }
@@ -1951,7 +1951,7 @@ func TestCrawl_Refresh_DelegatesToClient(t *testing.T) {
 		}
 	})
 
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Refresh: true})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev", Refresh: true})
 	if err := crawl.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1971,7 +1971,7 @@ func TestCrawl_Refresh_DelegatesToClient(t *testing.T) {
 
 func TestCrawl_Refresh_NotStartedReturnsError(t *testing.T) {
 	client, _ := New("__API_KEY__")
-	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://example.com", Refresh: true})
+	crawl := NewCrawl(client, &CrawlerConfig{URL: "https://web-scraping.dev", Refresh: true})
 
 	if _, err := crawl.RefreshNow(); !errors.Is(err, ErrCrawlerNotStarted) {
 		t.Errorf("RefreshNow: %v", err)

@@ -44,7 +44,7 @@ const (
 // Example:
 //
 //	config := &scrapfly.ScreenshotConfig{
-//	    URL:        "https://example.com",
+//	    URL:        "https://web-scraping.dev",
 //	    Format:     scrapfly.FormatPNG,
 //	    Capture:    "fullpage",
 //	    Resolution: "1920x1080",
