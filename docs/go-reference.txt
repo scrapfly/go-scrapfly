@@ -1028,7 +1028,7 @@ func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[str
     vaultKey is required: the sealed service-account token is opened with it,
     and the server verifies the key before claiming the sync round.
 
-    The server budget is 25s. The SDK has one client-wide timeout (150s, see New
+    The server budget is 25s. The SDK has one client-wide timeout (160s, see New
     / NewWithHost) and no per-call deadline, so a slow provider still returns
     the server's own report instead of a client-side cancel.
 
@@ -1160,8 +1160,15 @@ func (c *Client) CrawlContentsPlain(uuid, targetURL string, format CrawlerConten
     content-type based on the format (text/markdown, text/html, text/plain,
     application/json).
 
+func (c *Client) CrawlExtract(uuid, prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error)
+    CrawlExtract extracts a structured object from a single crawl's content.
+
 func (c *Client) CrawlPrompt(uuid, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
     CrawlPrompt answers a question from a single crawl's content.
+
+func (c *Client) CrawlPromptAnswer(uuid, prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error)
+    CrawlPromptAnswer answers a question from a single crawl's content, all at
+    once.
 
 func (c *Client) CrawlRefreshHistory(uuid string, limit int) ([]CrawlerRefreshEntry, error)
     CrawlRefreshHistory reads a crawl's refresh timeline, newest last.
@@ -1220,6 +1227,27 @@ func (c *Client) CrawlURLs(uuid string, opts *CrawlURLsOptions) (*CrawlerURLs, e
     Pagination: the wire protocol carries no global total count. Request further
     pages by incrementing Page until an empty response.
 
+func (c *Client) CrawlsExtract(crawlIDs []string, prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error)
+    CrawlsExtract extracts a structured object from the content of one or more
+    crawls.
+
+    `POST /crawl/extract` retrieves like CrawlsPromptAnswer and answers with
+    Data shaped by schema, a JSON Schema handed to the model as its response
+    schema. There is no streaming variant. CrawlExtract is sugar over a
+    one-element list.
+
+    No retry: a retry re-runs the fan-out and the generation.
+
+    Example:
+
+        res, err := client.CrawlsExtract([]string{uuid}, "Every product with its price", map[string]interface{}{
+            "type":     "object",
+            "properties": map[string]interface{}{"products": map[string]interface{}{"type": "array"}},
+            "required": []string{"products"},
+        }, nil)
+        var out struct{ Products []struct{ Name string; Price float64 } }
+        err = res.Decode(&out)
+
 func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
     CrawlsPrompt answers a question from the content of one or more crawls,
     streaming the answer as it is generated.
@@ -1244,6 +1272,16 @@ func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromp
                 }
                 return nil
             })
+
+func (c *Client) CrawlsPromptAnswer(crawlIDs []string, prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error)
+    CrawlsPromptAnswer answers a question from the content of one or more
+    crawls, and returns the whole answer once generation completes.
+
+    `POST /crawl/prompt` with `generation.stream: false`: the same facts as the
+    frames CrawlsPrompt hands its handler. CrawlPromptAnswer is sugar over a
+    one-element list.
+
+    No retry: the request runs a fan-out and a generation, both billable.
 
 func (c *Client) CrawlsSearch(crawlIDs []string, query string, opts *CrawlSearchOptions) (*CrawlerSearchResponse, error)
     CrawlsSearch searches the indexes of one or more crawls and returns one
@@ -1518,7 +1556,7 @@ func (c *Client) SetHTTPClient(httpClient *http.Client)
         client, _ := scrapfly.New("YOUR_API_KEY")
         client.SetHTTPClient(&http.Client{
             Transport: &loggingTransport{base: http.DefaultTransport},
-            Timeout:   150 * time.Second,
+            Timeout:   160 * time.Second,
         })
 
 func (c *Client) SnoozeAlert(alertUUID string, req AlertSnoozeRequest) (*Alert, error)
@@ -1906,12 +1944,20 @@ func (c *Crawl) Cancel() error
 func (c *Crawl) Contents(format CrawlerContentFormat, opts *CrawlContentsOptions) (*CrawlerContents, error)
     Contents returns the bulk JSON envelope for crawled pages.
 
+func (c *Crawl) Extract(prompt string, schema map[string]interface{}, opts *CrawlExtractOptions) (*CrawlerExtractResponse, error)
+    Extract extracts a structured object from this crawl's content, shaped by
+    schema. Thin wrapper around Client.CrawlExtract.
+
 func (c *Crawl) HAR() (*CrawlerArtifact, error)
     HAR downloads the HAR artifact for this crawl (cached after first call).
 
 func (c *Crawl) Prompt(prompt string, opts *CrawlPromptOptions, handler CrawlPromptHandler) error
     Prompt answers a question from this crawl's content, streaming the answer
     through handler. Thin wrapper around Client.CrawlPrompt.
+
+func (c *Crawl) PromptAnswer(prompt string, opts *CrawlPromptOptions) (*CrawlerPromptAnswer, error)
+    PromptAnswer answers a question from this crawl's content, all at once.
+    Thin wrapper around Client.CrawlPromptAnswer.
 
 func (c *Crawl) Read(targetURL string, format CrawlerContentFormat) (*CrawlContent, error)
     Read fetches the content for a single crawled URL.
@@ -2056,6 +2102,12 @@ type CrawlContentsOptions struct {
 	Offset int
 }
     CrawlContentsOptions configures a GET /crawl/{uuid}/contents request.
+
+type CrawlExtractOptions struct {
+	// Search overrides retrieval. Nil uses the server's defaults.
+	Search *CrawlSearchOptions
+}
+    CrawlExtractOptions configures an extraction.
 
 type CrawlPromptHandler func(event CrawlerPromptEvent) error
     CrawlPromptHandler receives each decoded frame of the prompt stream.
@@ -2294,6 +2346,23 @@ type CrawlerContentsLinks struct {
     CrawlerContentsLinks is the pagination links block returned with bulk
     contents.
 
+type CrawlerExtractResponse struct {
+	Prompt string          `json:"prompt"`
+	Data   json.RawMessage `json:"data"`
+	// Sources are the retrieved chunks Data was built from.
+	Sources        []CrawlerPromptSource `json:"sources"`
+	SourcesDropped int                   `json:"sources_dropped"`
+	Truncated      bool                  `json:"truncated"`
+	Search         CrawlerPromptSearch   `json:"search"`
+}
+    CrawlerExtractResponse is the answer of `POST /crawl/extract`. Data is
+    the object the request's JSON Schema shaped, left encoded: Decode it into
+    your own type. The schema constrains the model as it generates; it is not
+    validated again afterwards, so validate anything you act on.
+
+func (r *CrawlerExtractResponse) Decode(v interface{}) error
+    Decode unmarshals Data into v.
+
 type CrawlerLifecycleWebhook struct {
 	Event   CrawlerWebhookEvent `json:"event"`
 	Payload struct {
@@ -2308,6 +2377,21 @@ type CrawlerLifecycleWebhook struct {
     share an identical payload shape: crawler_started, crawler_stopped,
     crawler_cancelled, crawler_finished. Verified against the example JSONs in
     the docs.
+
+type CrawlerPromptAnswer struct {
+	Prompt  string                `json:"prompt"`
+	Answer  string                `json:"answer"`
+	Sources []CrawlerPromptSource `json:"sources"`
+	// SourcesUsed, SourcesDropped, Truncated and APICredit mean what they mean
+	// on CrawlerPromptDone.
+	SourcesUsed    []int               `json:"sources_used"`
+	SourcesDropped int                 `json:"sources_dropped"`
+	Truncated      bool                `json:"truncated"`
+	Search         CrawlerPromptSearch `json:"search"`
+	APICredit      *int                `json:"api_credit"`
+}
+    CrawlerPromptAnswer is the answer of `POST /crawl/prompt` with
+    `generation.stream: false`: the facts of the stream, in one object.
 
 type CrawlerPromptDone struct {
 	SourcesUsed []int `json:"sources_used"`
@@ -2353,6 +2437,16 @@ const (
 )
     Prompt stream frames, in emission order: sources first, then tokens,
     then exactly one done (or one error).
+
+type CrawlerPromptSearch struct {
+	Completeness      string                 `json:"completeness"`
+	CrawlsRequested   int                    `json:"crawls_requested"`
+	CrawlsSearched    int                    `json:"crawls_searched"`
+	CrawlsPrunedExact int                    `json:"crawls_pruned_exact"`
+	Skipped           []CrawlerSearchSkipped `json:"skipped"`
+}
+    CrawlerPromptSearch says how much of the corpus a prompt answer or an
+    extraction covers. A skipped crawl is never fatal.
 
 type CrawlerPromptSource struct {
 	ID          int     `json:"id"`
@@ -3814,6 +3908,8 @@ type ScreenshotResult struct {
 	Image []byte
 	// Metadata contains information about the screenshot.
 	Metadata ScreenshotMetadata
+	// JobUUID is the job of a screenshot with a webhook: the image is delivered to the webhook, and Image and Metadata are empty.
+	JobUUID string
 }
     ScreenshotResult represents a screenshot captured by the API.
 
@@ -4208,6 +4304,10 @@ func (b *ScenarioBuilder) Scroll(opts ...ScrollOption) *ScenarioBuilder
     Scroll adds a step to scroll the page or a specific element. By default
     (with no options), it scrolls to the bottom of the page.
 
+func (b *ScenarioBuilder) SolveCaptcha(opts ...SolveCaptchaOption) *ScenarioBuilder
+    SolveCaptcha adds a step that solves the captcha on the page. A scenario
+    holds 5 of these steps at most.
+
 func (b *ScenarioBuilder) Steps() []JSScenarioStep
     Steps returns the steps of the scenario. Use this method when passing the
     scenario to the ScrapeConfig.JSScenario field.
@@ -4252,6 +4352,16 @@ const (
 	// SelectorStateHidden waits for the element to be removed or hidden from the DOM.
 	SelectorStateHidden SelectorState = "hidden"
 )
+type SolveCaptchaOption func(*solveCaptchaParams)
+    SolveCaptchaOption is a function that configures a solve_captcha action.
+
+func WithCaptchaIgnore() SolveCaptchaOption
+    WithCaptchaIgnore continues the scenario when the captcha is not solved.
+
+func WithCaptchaTimeout(milliseconds int) SolveCaptchaOption
+    WithCaptchaTimeout sets the maximum time to wait for the captcha to be
+    solved.
+
 type WaitForNavOption func(*waitForNavParams)
     WaitForNavOption is a function that configures a wait_for_navigation action.
 
