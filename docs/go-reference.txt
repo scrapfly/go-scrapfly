@@ -78,26 +78,16 @@ JavaScript Rendering:
         AutoScroll:      true,
     }
 
-Proxy pools (anti-bot bypass):
+Anti-bot bypass (the Unblocker) and proxy pools:
 
     config := &scrapfly.ScrapeConfig{
         URL:       "https://example.com",
-        ProxyPool: scrapfly.ProxyPoolUnblocker,
+        Unblocker: scrapfly.BoolPtr(true),
+        ProxyPool: scrapfly.PublicResidentialPool,
     }
 
-ProxyPoolBasic runs on datacenter proxies with the Unblocker off,
-ProxyPoolUnblocker and ProxyPoolUnblockerUltra on residential proxies with
-the Unblocker on. The targets and anti-bot protections that have a price of
-their own accept ProxyPoolUnblockerUltra only and refuse the other two with
-ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED (HTTP 422, not billed). ProxyPoolAuto
-lets the API pick the pool before the request, from the target's profile: the
-Unblocker on datacenter proxies, or the pool the target needs. It is accepted
-on every target, the ones that require ProxyPoolUnblockerUltra included,
-where their price is added, and is priced as the pool it runs on.
-
-The Unblocker *bool and its alias ASP are deprecated: use ProxyPool
-(ProxyPoolUnblockerUltra for the Unblocker). The migration guide covers requests
-written before the proxy pools: https://scrapfly.io/new-pricing#legacy-spellings
+ProxyPool is PublicDataCenterPool (the default), PublicResidentialPool or
+PublicTorPool. ASP is the deprecated alias of Unblocker.
 
 Taking Screenshots:
 
@@ -1437,8 +1427,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
     The method supports various features including:
       - JavaScript rendering (RenderJS)
       - Proxy rotation and geo-targeting
-      - Anti-bot protection bypass (the unblocker, unblocker_ultra and auto
-        proxy pools)
+      - Anti-bot protection bypass (Unblocker)
       - Custom headers and cookies
       - Screenshot capture
       - Data extraction
@@ -1448,7 +1437,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
         config := &scrapfly.ScrapeConfig{
             URL:       "https://example.com",
             Country:   "us",
-            ProxyPool: scrapfly.ProxyPoolUnblocker,
+            Unblocker: scrapfly.BoolPtr(true),
         }
         result, err := client.Scrape(config)
         if err != nil {
@@ -1621,9 +1610,7 @@ func (c *Client) VerifyAPIKey() (*VerifyAPIKeyResult, error)
         }
 
 type CloudBrowserConfig struct {
-	// ProxyPool is "datacenter", "residential", "tor" or "byop". The Web
-	// Scraping API pools basic, unblocker, unblocker_ultra and auto are
-	// refused here with ERR::BROWSER::CONFIG_ERROR.
+	// ProxyPool is "datacenter", "residential", "tor" or "byop".
 	ProxyPool string `json:"proxy_pool,omitempty"`
 	// OS is the fingerprint operating system: linux, windows, macos, android, iphone, ipad.
 	OS      string `json:"os,omitempty"`
@@ -2249,10 +2236,6 @@ type CrawlerConfig struct {
 
 	// Unblocker turns the Unblocker (anti-bot bypass, formerly "ASP") on.
 	//
-	// Deprecated: use ProxyPool ("unblocker_ultra" for the Unblocker). The
-	// migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings
-	//
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized into the POST /crawl body under the "asp" key — the wire key
 	// is unchanged.
@@ -2270,16 +2253,14 @@ type CrawlerConfig struct {
 	Unblocker *bool
 	// ASP enables the Unblocker (formerly Anti-Scraping Protection).
 	//
-	// Deprecated: use ProxyPool ("unblocker_ultra" for the Unblocker). The
-	// migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings. When ASP is true it
-	// wins over Unblocker, because a plain bool cannot distinguish "unset"
-	// from "explicitly false" and honouring it is the only way an old caller
-	// keeps its feature.
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
-	// ProxyPool is the proxy pool of every crawled page: "basic",
-	// "unblocker", "unblocker_ultra" or "auto" (string(ProxyPoolBasic), ...),
-	// each of which sets the Unblocker itself.
+	// ProxyPool is the proxy pool of every crawled page:
+	// "public_datacenter_pool" (the default), "public_residential_pool" or
+	// "public_tor_pool" (string(PublicDataCenterPool), ...).
 	ProxyPool string
 	Country   string
 
@@ -3349,46 +3330,21 @@ type ProxyContext struct {
 	Country  string `json:"country"`
 	Identity string `json:"identity"`
 	Network  string `json:"network"`
-	// Pool, like ConfigData.ProxyPool, names the pool the request asked for
-	// the way the account reads it: Tor reads public_tor_pool and one of the
-	// account's own pools its name. Otherwise, when the Unblocker ran (asked,
-	// or forced by a target that requires it), basic and unblocker read
-	// unblocker and any other pool unblocker_ultra. Without the Unblocker a
-	// Scrapfly pool reads by its network (basic, unblocker, mobile, isp) and
-	// any other name as sent.
+	// Pool is the proxy pool the request ran on.
 	Pool string `json:"pool"`
 }
     ProxyContext contains information about the proxy used for the request.
 
 type ProxyPool string
-    ProxyPool is the proxy_pool parameter of the Web Scraping API,
-    the Crawler and the Screenshot API: ProxyPoolBasic, ProxyPoolUnblocker,
-    ProxyPoolUnblockerUltra or ProxyPoolAuto, each of which sets both the
-    proxies and the Unblocker, or PublicTorPool, the Tor network. The Screenshot
-    API takes the first four and ignores any other value.
-
-    The pool names written before the proxy pools (PublicDataCenterPool,
-    PublicResidentialPool) are still accepted. The migration guide covers them:
-    https://scrapfly.io/new-pricing#legacy-spellings
+    ProxyPool is the proxy_pool parameter of the Web Scraping API and the
+    Crawler: PublicDataCenterPool (the default), PublicResidentialPool or
+    PublicTorPool. The anti-bot bypass is a parameter of its own: Unblocker.
 
 const (
-	// ProxyPoolBasic runs on datacenter proxies with the Unblocker off.
-	ProxyPoolBasic ProxyPool = "basic"
-	// ProxyPoolUnblocker runs on residential proxies with the Unblocker
-	// (anti-bot bypass) on.
-	ProxyPoolUnblocker ProxyPool = "unblocker"
-	// ProxyPoolUnblockerUltra runs on residential proxies with the Unblocker
-	// on. It is the only pool accepted by the targets and anti-bot
-	// protections that have a price of their own: those refuse basic and
-	// unblocker with ERR::PROXY::UNBLOCKER_ULTRA_REQUIRED (HTTP 422, not
-	// billed).
-	ProxyPoolUnblockerUltra ProxyPool = "unblocker_ultra"
-	// ProxyPoolAuto lets the API pick the pool before the request, from the
-	// target's profile: the Unblocker on datacenter proxies, or the pool the
-	// target needs. Accepted on every target, the ones that require
-	// ProxyPoolUnblockerUltra included, where their price is added; priced as
-	// the pool it runs on.
-	ProxyPoolAuto ProxyPool = "auto"
+	// PublicDataCenterPool routes through datacenter proxies, the default pool.
+	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
+	// PublicResidentialPool routes through residential proxies.
+	PublicResidentialPool ProxyPool = "public_residential_pool"
 	// PublicTorPool routes egress through the Tor network, the only pool that
 	// reaches .onion hidden services; also used for OSINT.
 	PublicTorPool ProxyPool = "public_tor_pool"
@@ -3396,22 +3352,21 @@ const (
     Proxy pools.
 
 const (
-	// PublicDataCenterPool is the former name of the datacenter pool.
-	PublicDataCenterPool ProxyPool = "public_datacenter_pool"
-	// PublicResidentialPool is the former name of the residential pool.
-	PublicResidentialPool ProxyPool = "public_residential_pool"
+	ProxyPoolBasic          ProxyPool = "basic"
+	ProxyPoolUnblocker      ProxyPool = "unblocker"
+	ProxyPoolUnblockerUltra ProxyPool = "unblocker_ultra"
+	ProxyPoolAuto           ProxyPool = "auto"
 )
-    Pool names written before the proxy pools, still accepted. The migration
-    guide covers them: https://scrapfly.io/new-pricing#legacy-spellings
+    Pool names the API does not accept yet: a request naming one fails with
+    ERR::PROXY::POOL_NOT_FOUND.
 
 func (f ProxyPool) AnyEnum() []any
 
 func (f ProxyPool) Enum() []ProxyPool
 
 func (f ProxyPool) IsLegacy() bool
-    IsLegacy reports whether f is one of the pool names written before the proxy
-    pools (PublicDataCenterPool, PublicResidentialPool). PublicTorPool is not
-    one: the Tor pool keeps its name.
+    IsLegacy reports whether f is PublicDataCenterPool or PublicResidentialPool.
+    PublicTorPool is not one.
 
 func (f ProxyPool) IsValid() bool
 
@@ -3503,20 +3458,12 @@ type ScrapeConfig struct {
 	// Country specifies the proxy country code (e.g., "us", "uk", "de").
 	// Supports ISO 3166-1 alpha-2 country codes.
 	Country string
-	// ProxyPool selects the proxy pool: ProxyPoolBasic (datacenter, Unblocker
-	// off), ProxyPoolUnblocker (residential, Unblocker on),
-	// ProxyPoolUnblockerUltra (residential, Unblocker on, the only pool the
-	// targets and anti-bot protections with a price of their own accept) or
-	// ProxyPoolAuto (the API picks the pool from the target's profile). Each
-	// sets the Unblocker itself. Empty sends no proxy_pool.
+	// ProxyPool selects the proxy pool: PublicDataCenterPool (the default),
+	// PublicResidentialPool or PublicTorPool. Empty sends no proxy_pool.
 	ProxyPool ProxyPool
 	// RenderJS enables JavaScript rendering using a headless browser.
 	RenderJS bool
 	// Unblocker turns the Unblocker (anti-bot bypass, formerly "ASP") on.
-	//
-	// Deprecated: use ProxyPool (ProxyPoolUnblockerUltra for the Unblocker).
-	// The migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings
 	//
 	// nil means unset; set it with BoolPtr(true) / BoolPtr(false).
 	// Serialized as the "asp" query parameter — the wire key is unchanged.
@@ -3534,12 +3481,10 @@ type ScrapeConfig struct {
 	Unblocker *bool
 	// ASP enables the Unblocker (formerly Anti-Scraping Protection).
 	//
-	// Deprecated: use ProxyPool (ProxyPoolUnblockerUltra for the Unblocker).
-	// The migration guide covers requests written before the proxy pools:
-	// https://scrapfly.io/new-pricing#legacy-spellings. When ASP is true it
-	// wins over Unblocker, because a plain bool cannot distinguish "unset"
-	// from "explicitly false" and honouring it is the only way an old caller
-	// keeps its feature.
+	// Deprecated: use Unblocker. ASP keeps working forever; it is only the
+	// documented name that changed. When ASP is true it wins over Unblocker,
+	// because a plain bool cannot distinguish "unset" from "explicitly false"
+	// and honouring it is the only way an old caller keeps its feature.
 	ASP bool
 	// Cache enables response caching.
 	Cache bool
@@ -3631,16 +3576,14 @@ type ScrapeConfig struct {
         config := &scrapfly.ScrapeConfig{
             URL:       "https://example.com",
             Country:   "us",
-            ProxyPool: scrapfly.ProxyPoolUnblocker,
+            Unblocker: scrapfly.BoolPtr(true),
             Cache:     true,
             Format:    scrapfly.FormatMarkdown,
         }
 
 func (c *ScrapeConfig) UnblockerEnabled() bool
-    UnblockerEnabled reports whether the anti-bot bypass will be requested —
-    the single resolved value that reaches the wire as "asp". When ProxyPool is
-    basic, unblocker, unblocker_ultra or auto, the API ignores that value and
-    takes the Unblocker from the pool.
+    UnblockerEnabled reports whether the anti-bot bypass will be requested — the
+    single resolved value that reaches the wire as "asp".
 
     It exists because ASP and Unblocker are two independent exported fields
     rather than one slot behind two names. Without it there is no way to read
@@ -3814,11 +3757,8 @@ type ScreenshotConfig struct {
 	// VisionDeficiencyType specifies the type of vision deficiency to simulate.
 	// see https://scrapfly.io/docs/screenshot-api/accessibility#vision_deficiency
 	VisionDeficiencyType VisionDeficiencyType
-	// ProxyPool is the proxy pool: ProxyPoolBasic, ProxyPoolUnblocker,
-	// ProxyPoolUnblockerUltra or ProxyPoolAuto. The Screenshot API takes these
-	// four only and ignores any other value. Empty sends no proxy_pool and the
-	// API's screenshot defaults apply. The screenshot price is the same on
-	// every pool, and a screenshot is never retried.
+	// ProxyPool is sent as proxy_pool. The Screenshot API picks its pool itself
+	// and ignores this value. Empty sends no proxy_pool.
 	ProxyPool ProxyPool
 }
     ScreenshotConfig configures a screenshot capture request to the Scrapfly
@@ -4211,7 +4151,7 @@ The final output is a base64 encoded string, ready to be used as the
     		URL: "https://example.com",
     		RenderJS: true,
     		Country: "us",
-    		ProxyPool: scrapfly.ProxyPoolUnblocker,
+    		Unblocker: scrapfly.BoolPtr(true),
     		JSScenario: sc,
     	}
     }
