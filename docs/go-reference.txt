@@ -43,7 +43,7 @@ Create a client and perform a simple scrape:
 
         // Configure the scrape request
         config := &scrapfly.ScrapeConfig{
-            URL:      "https://example.com",
+            URL:      "https://web-scraping.dev",
             RenderJS: true,
             Country:  "us",
         }
@@ -71,7 +71,7 @@ Create a client and perform a simple scrape:
 JavaScript Rendering:
 
     config := &scrapfly.ScrapeConfig{
-        URL:             "https://example.com",
+        URL:             "https://web-scraping.dev",
         RenderJS:        true,
         WaitForSelector: ".content",
         RenderingWait:   2000,
@@ -81,7 +81,7 @@ JavaScript Rendering:
 Anti-bot bypass (the Unblocker) and proxy pools:
 
     config := &scrapfly.ScrapeConfig{
-        URL:       "https://example.com",
+        URL:       "https://web-scraping.dev",
         Unblocker: scrapfly.BoolPtr(true),
         ProxyPool: scrapfly.PublicResidentialPool,
     }
@@ -92,7 +92,7 @@ PublicTorPool. ASP is the deprecated alias of Unblocker.
 Taking Screenshots:
 
     config := &scrapfly.ScreenshotConfig{
-        URL:        "https://example.com",
+        URL:        "https://web-scraping.dev",
         Format:     scrapfly.FormatPNG,
         Capture:    "fullpage",
         Resolution: "1920x1080",
@@ -106,9 +106,9 @@ Taking Screenshots:
 Concurrent Scraping:
 
     configs := []*scrapfly.ScrapeConfig{
-        {URL: "https://example.com/page1"},
-        {URL: "https://example.com/page2"},
-        {URL: "https://example.com/page3"},
+        {URL: "https://web-scraping.dev/page1"},
+        {URL: "https://web-scraping.dev/page2"},
+        {URL: "https://web-scraping.dev/page3"},
     }
     resultsChan := client.ConcurrentScrape(configs, 3)
     for result := range resultsChan {
@@ -156,7 +156,7 @@ Enable debug logging to see detailed request information:
 Enable debug mode in the API to access debug information in the dashboard:
 
     config := &scrapfly.ScrapeConfig{
-        URL:   "https://example.com",
+        URL:   "https://web-scraping.dev",
         Debug: true,
     }
 
@@ -169,6 +169,13 @@ For more information, visit:
 
 CONSTANTS
 
+const (
+	// DefaultDownloadChunkSize is the base64 characters read per IO.read: an
+	// 8 MiB message carrying 6 MiB of the file.
+	DefaultDownloadChunkSize = 8 * 1024 * 1024
+	// MaxDownloadChunkSize is the largest chunk the Cloud Browser serves per IO.read.
+	MaxDownloadChunkSize = 32 * 1024 * 1024
+)
 const (
 	CrawlerStatusPending   = "PENDING"
 	CrawlerStatusRunning   = "RUNNING"
@@ -340,6 +347,10 @@ var DefaultLogger = NewLogger("scrapfly")
 
         scrapfly.DefaultLogger.SetLevel(scrapfly.LevelDebug)
 
+var ErrDownloadIncomplete = errors.New("download stream ended with the wrong size")
+    ErrDownloadIncomplete reports a stream that ended with fewer or more bytes
+    than the download's size.
+
 
 FUNCTIONS
 
@@ -347,7 +358,7 @@ func BoolPtr(v bool) *bool
     BoolPtr is a tiny helper for constructing *bool tri-state fields.
 
         config := &scrapfly.CrawlerConfig{
-            URL:               "https://example.com",
+            URL:               "https://web-scraping.dev",
             RespectRobotsTxt:  scrapfly.BoolPtr(false),
             FollowInternalSubdomains: scrapfly.BoolPtr(true),
         }
@@ -526,9 +537,9 @@ type AlertCreateRequest struct {
 	RenotifyMinutes int                  `json:"renotify_minutes,omitempty"`
 	NoDataPolicy    AlertNoDataPolicy    `json:"no_data_policy,omitempty"`
 }
-    AlertCreateRequest is the body for CreateAlert. ProjectUUID/ProjectName are
-    optional — when empty the API substitutes the caller's currently- selected
-    project (the dashboard's project switcher controls this).
+    AlertCreateRequest is the body for CreateAlert. The alert binds to the
+    project of the API key, the only project a key creates in: leave ProjectUUID
+    empty (another project is refused) and ProjectName is ignored.
 
     Server-side defaults applied when zero values are sent:
       - EvalCadenceSeconds: 300
@@ -551,7 +562,8 @@ type AlertListOptions struct {
 	MetricID    string
 }
     AlertListOptions narrows ListAlerts. Empty fields are omitted from the query
-    string — pass an empty struct to get all alerts for the caller.
+    string — pass an empty struct to get every alert of the API key's project.
+    ProjectUUID can only name that project: another one lists none.
 
 type AlertMetricFamily struct {
 	ID                      string            `json:"id"`
@@ -794,11 +806,59 @@ type BrowserData struct {
     BrowserData contains data collected from the browser during JavaScript
     rendering.
 
+type BrowserDownload struct {
+	Name   string
+	GUID   string
+	Size   int64
+	Data   string
+	Stream string
+}
+    BrowserDownload is one file of the session's download directory. A small
+    file carries its base64 content in Data. A large one, with DownloadsStream,
+    carries the IO handle to read in Stream instead, and its size in bytes in
+    Size.
+
+func ParseDownloads(raw json.RawMessage) ([]BrowserDownload, error)
+    ParseDownloads reads a ScrapiumBrowser.getDownloads result, in either of its
+    shapes, sorted by name.
+
+func (d BrowserDownload) Streamed() bool
+    Streamed reports whether the download is read through an IO stream handle.
+
+type CDPSender interface {
+	SendCDP(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
+}
+    CDPSender sends one CDP command on a Cloud Browser session and returns its
+    result.
+
+func ChromedpCDP(executor ChromedpExecutor) CDPSender
+    ChromedpCDP sends through chromedp: pass chromedp.FromContext(ctx).Target.
+
+func PlaywrightCDP(session PlaywrightCDPSession) CDPSender
+    PlaywrightCDP sends through playwright-go: pass context.NewCDPSession(page).
+    playwright-go takes no context, so a cancelled ctx only stops between
+    commands.
+
+func RodCDP(caller RodCaller, sessionID string) CDPSender
+    RodCDP sends through go-rod: pass the page and string(page.SessionID).
+
+type CDPSenderFunc func(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
+    CDPSenderFunc adapts a function to CDPSender, for a CDP client of your own.
+
+func (f CDPSenderFunc) SendCDP(ctx context.Context, method string, params map[string]any) (json.RawMessage, error)
+    SendCDP calls f.
+
 type CacheContext struct {
 	State string      `json:"state"`
 	Entry interface{} `json:"entry"`
 }
     CacheContext contains information about cache usage for the request.
+
+type ChromedpExecutor interface {
+	Execute(ctx context.Context, method string, params, res any) error
+}
+    ChromedpExecutor is the method set of chromedp's *chromedp.Target
+    (cdp.Executor, chromedp v0.10 and later).
 
 type ClassifyRequest struct {
 	URL        string            `json:"url"`
@@ -840,13 +900,13 @@ func NewWithHost(key, host string, verifySSL bool) (*Client, error)
 
     Parameters:
       - key: Your Scrapfly API key
-      - host: Custom API host URL (e.g., "https://custom-api.example.com")
+      - host: Custom API host URL (e.g., "https://api.web-scraping.dev")
       - verifySSL: Whether to verify SSL certificates (set to false only for
         testing)
 
     Example:
 
-        client, err := scrapfly.NewWithHost("YOUR_API_KEY", "https://custom-api.example.com", true)
+        client, err := scrapfly.NewWithHost("YOUR_API_KEY", "https://api.web-scraping.dev", true)
 
 func (c *Client) APIKey() string
     APIKey returns the currently configured API key.
@@ -1089,10 +1149,10 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
         }
 
 func (c *Client) CountActiveAlerts(projectUUID string) (*AlertCountActiveResult, error)
-    CountActiveAlerts returns the count of alerts currently in actively- firing
-    states (triggered, pending, recovering) for the caller. Cheap — designed for
-    sub-millisecond badge rendering in the dashboard. projectUUID is optional;
-    empty string means "all projects".
+    CountActiveAlerts returns the count of alerts currently in actively-
+    firing states (triggered, pending, recovering) for the API key's project.
+    Cheap — designed for sub-millisecond badge rendering in the dashboard.
+    projectUUID is optional and can only name that project.
 
 func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*CrawlerArtifact, error)
     CrawlArtifact downloads a crawler job's WARC or HAR artifact.
@@ -1140,7 +1200,7 @@ func (c *Client) CrawlContentsJSON(uuid string, format CrawlerContentFormat, opt
     Example:
 
         contents, err := client.CrawlContentsJSON(uuid, scrapfly.CrawlerFormatMarkdown, nil)
-        md, err := client.CrawlContentsPlain(uuid, "https://example.com/page", scrapfly.CrawlerFormatMarkdown)
+        md, err := client.CrawlContentsPlain(uuid, "https://web-scraping.dev/page", scrapfly.CrawlerFormatMarkdown)
 
 func (c *Client) CrawlContentsPlain(uuid, targetURL string, format CrawlerContentFormat) (string, error)
     CrawlContentsPlain fetches the raw content for a single crawled URL in
@@ -1393,9 +1453,9 @@ func (c *Client) ListAlertMetricFamilies() ([]AlertMetricFamily, error)
     bucket grain.
 
 func (c *Client) ListAlerts(opts AlertListOptions) ([]Alert, error)
-    ListAlerts returns every alert definition owned by the caller. Filters in
-    opts narrow the result server-side — pass an empty AlertListOptions{} to get
-    all rows.
+    ListAlerts returns the alert definitions of the API key's project. Filters
+    in opts narrow the result server-side — pass an empty AlertListOptions{} to
+    get all of them.
 
     Example:
 
@@ -1435,7 +1495,7 @@ func (c *Client) Scrape(config *ScrapeConfig) (*ScrapeResult, error)
     Example:
 
         config := &scrapfly.ScrapeConfig{
-            URL:       "https://example.com",
+            URL:       "https://web-scraping.dev",
             Country:   "us",
             Unblocker: scrapfly.BoolPtr(true),
         }
@@ -1480,9 +1540,9 @@ func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error)
     Example:
 
         configs := []*scrapfly.ScrapeConfig{
-            {URL: "https://example.com/page1"},
-            {URL: "https://example.com/page2"},
-            {URL: "https://example.com/page3"},
+            {URL: "https://web-scraping.dev/page1"},
+            {URL: "https://web-scraping.dev/page2"},
+            {URL: "https://web-scraping.dev/page3"},
         }
         for item := range client.ConcurrentScrape(configs, 3) {
 
@@ -1512,7 +1572,7 @@ func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error)
     Example:
 
         config := &scrapfly.ScreenshotConfig{
-            URL:        "https://example.com",
+            URL:        "https://web-scraping.dev",
             Format:     scrapfly.FormatPNG,
             Capture:    "fullpage",
             Resolution: "1920x1080",
@@ -1710,6 +1770,12 @@ type CloudBrowserConfig struct {
 	// HITLAllowedNetworks lists source IPs / CIDRs trusted to attach to
 	// the HITL channels (VNC + WebRTC + downloads) without credentials.
 	HITLAllowedNetworks []string `json:"hitl_allowed_networks,omitempty"`
+
+	// DownloadsStream makes ScrapiumBrowser.getDownloads return large downloaded
+	// files as IO stream handles instead of inline base64: read them with
+	// CloudBrowserDownloads. See
+	// https://scrapfly.io/docs/cloud-browser-api/file-downloads#large-downloads
+	DownloadsStream bool `json:"downloads_stream,omitempty"`
 }
     CloudBrowserConfig configures a Cloud Browser session.
 
@@ -1722,6 +1788,47 @@ func (cfg *CloudBrowserConfig) VNCClientPassword(apiKey string) (string, error)
     at allocation. The WebSocket endpoint /run/<run_id>/vnc takes the raw
     VNCPassword instead. Returns ErrVNCNotConfigured when the config carries no
     VNC credential to salt.
+
+type CloudBrowserDownloads struct {
+
+	// ChunkSize is the base64 characters read per IO.read, rounded down to a
+	// multiple of 4: DefaultDownloadChunkSize when zero, MaxDownloadChunkSize at most.
+	ChunkSize int
+	// Has unexported fields.
+}
+    CloudBrowserDownloads reads the downloads of a Cloud Browser session.
+
+func NewCloudBrowserDownloads(sender CDPSender) *CloudBrowserDownloads
+    NewCloudBrowserDownloads reads downloads through sender: ChromedpCDP,
+    RodCDP, PlaywrightCDP, or a CDPSenderFunc of your own.
+
+func (d *CloudBrowserDownloads) List(ctx context.Context) ([]BrowserDownload, error)
+    List returns every download of the session: small ones with their content,
+    large ones as handles.
+
+func (d *CloudBrowserDownloads) Metadata(ctx context.Context) (map[string]int64, error)
+    Metadata returns the size in bytes of every completed download, by filename.
+
+func (d *CloudBrowserDownloads) Read(ctx context.Context, download BrowserDownload) ([]byte, error)
+    Read returns the whole content of a download, in memory.
+
+func (d *CloudBrowserDownloads) Save(ctx context.Context, download BrowserDownload, path string) (string, error)
+    Save writes a download to path, a file or a directory (the current one when
+    empty), chunk by chunk, and returns the path written.
+
+func (d *CloudBrowserDownloads) SaveAll(ctx context.Context, dir string) ([]string, error)
+    SaveAll writes every download of the session into dir and returns their
+    paths.
+
+func (d *CloudBrowserDownloads) WaitFor(ctx context.Context, filename string, interval time.Duration) (int64, error)
+    WaitFor waits until filename is listed with the same size twice in a row and
+    returns that size, checking every interval (500ms when zero). Bound it with
+    ctx.
+
+func (d *CloudBrowserDownloads) WriteTo(ctx context.Context, download BrowserDownload, w io.Writer) (int64, error)
+    WriteTo writes the bytes of a download to w, one decoded chunk at a time,
+    and returns how many it wrote. A stream handle is read once and always
+    closed.
 
 type CloudBrowserLinkedService string
     CloudBrowserLinkedService is the provider discriminator of a linked vault.
@@ -3313,6 +3420,11 @@ type OSContext struct {
     OSContext contains information about the operating system used for the
     request.
 
+type PlaywrightCDPSession interface {
+	Send(method string, params map[string]interface{}) (interface{}, error)
+}
+    PlaywrightCDPSession is the method set of playwright-go's CDPSession.
+
 type Project struct {
 	AllowExtraUsage    bool     `json:"allow_extra_usage"`
 	AllowedNetworks    []string `json:"allowed_networks"`
@@ -3400,6 +3512,11 @@ type ResultData struct {
     ResultData contains the scraped content and response information. This is
     the main data from the scrape request including HTML content, status codes,
     headers, cookies, and more.
+
+type RodCaller interface {
+	Call(ctx context.Context, sessionID, methodName string, params interface{}) ([]byte, error)
+}
+    RodCaller is the method set of go-rod's *rod.Page and *rod.Browser.
 
 type Schedule struct {
 	ID                  string                 `json:"id"`
@@ -3574,7 +3691,7 @@ type ScrapeConfig struct {
     Example:
 
         config := &scrapfly.ScrapeConfig{
-            URL:       "https://example.com",
+            URL:       "https://web-scraping.dev",
             Country:   "us",
             Unblocker: scrapfly.BoolPtr(true),
             Cache:     true,
@@ -3770,7 +3887,7 @@ type ScreenshotConfig struct {
     Example:
 
         config := &scrapfly.ScreenshotConfig{
-            URL:        "https://example.com",
+            URL:        "https://web-scraping.dev",
             Format:     scrapfly.FormatPNG,
             Capture:    "fullpage",
             Resolution: "1920x1080",
@@ -4148,7 +4265,7 @@ The final output is a base64 encoded string, ready to be used as the
 
     	// Now `sc` can be passed directly to the Scrapfly API client.
     	scrapeConfig := &scrapfly.ScrapeConfig{
-    		URL: "https://example.com",
+    		URL: "https://web-scraping.dev",
     		RenderJS: true,
     		Country: "us",
     		Unblocker: scrapfly.BoolPtr(true),

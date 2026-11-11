@@ -183,16 +183,17 @@ type AlertPreviewResponse struct {
 }
 
 // AlertListOptions narrows ListAlerts. Empty fields are omitted from the
-// query string — pass an empty struct to get all alerts for the caller.
+// query string — pass an empty struct to get every alert of the API key's
+// project. ProjectUUID can only name that project: another one lists none.
 type AlertListOptions struct {
 	ProjectUUID string
 	State       AlertState
 	MetricID    string
 }
 
-// AlertCreateRequest is the body for CreateAlert. ProjectUUID/ProjectName
-// are optional — when empty the API substitutes the caller's currently-
-// selected project (the dashboard's project switcher controls this).
+// AlertCreateRequest is the body for CreateAlert. The alert binds to the
+// project of the API key, the only project a key creates in: leave
+// ProjectUUID empty (another project is refused) and ProjectName is ignored.
 //
 // Server-side defaults applied when zero values are sent:
 //   - EvalCadenceSeconds:  300
@@ -330,9 +331,9 @@ func ValidateAlertCreate(req AlertCreateRequest) error {
 // Auth: session OR ?key= (api-key). All read methods work today with the
 // SDK's ?key= auth.
 
-// ListAlerts returns every alert definition owned by the caller. Filters
-// in opts narrow the result server-side — pass an empty AlertListOptions{}
-// to get all rows.
+// ListAlerts returns the alert definitions of the API key's project.
+// Filters in opts narrow the result server-side — pass an empty
+// AlertListOptions{} to get all of them.
 //
 // Example:
 //
@@ -359,9 +360,9 @@ func (c *Client) ListAlerts(opts AlertListOptions) ([]Alert, error) {
 }
 
 // CountActiveAlerts returns the count of alerts currently in actively-
-// firing states (triggered, pending, recovering) for the caller. Cheap
-// — designed for sub-millisecond badge rendering in the dashboard.
-// projectUUID is optional; empty string means "all projects".
+// firing states (triggered, pending, recovering) for the API key's project.
+// Cheap — designed for sub-millisecond badge rendering in the dashboard.
+// projectUUID is optional and can only name that project.
 func (c *Client) CountActiveAlerts(projectUUID string) (*AlertCountActiveResult, error) {
 	params := url.Values{}
 	params.Set("key", c.key)
