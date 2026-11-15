@@ -78,7 +78,8 @@ type ScrapeConfig struct {
 	CacheClear bool
 	// Timeout sets the maximum time in milliseconds to wait for the request.
 	Timeout int
-	// Retry enables automatic retries on failure (enabled by default).
+	// Retry enables automatic retries on failure. The zero value sends
+	// retry=false and turns them off: set Retry: true to keep them.
 	Retry bool
 	// Session maintains a persistent browser session across requests.
 	Session string

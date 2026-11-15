@@ -47,6 +47,8 @@ func main() {
 		URL:       "https://web-scraping.dev/product/1",
 		Country:   "us",
 		Unblocker: scrapfly.BoolPtr(true),
+		// Retry is a plain bool: its zero value sends retry=false.
+		Retry: true,
 	}
 
 	// Perform the scrape
@@ -119,9 +121,11 @@ The two names are also two **independent fields**, where the other SDKs expose
 one storage slot under two names. Writing one never updates the other, so:
 
 ```go
+cfg := &scrapfly.ScrapeConfig{URL: "https://web-scraping.dev/"}
 cfg.ASP = true
+_ = cfg.Unblocker                       // still nil: writing ASP leaves Unblocker as it was
 cfg.Unblocker = scrapfly.BoolPtr(false) // does NOT turn it off — ASP still wins
-cfg.Unblocker                            // nil after cfg.ASP = true
+_ = cfg.UnblockerEnabled()              // true
 ```
 
 Last write does not win, and reading one name back after writing the other gives

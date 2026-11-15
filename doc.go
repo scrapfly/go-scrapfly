@@ -98,7 +98,7 @@
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	filePath, err := client.SaveScreenshot(result, "screenshot")
+//	filePath, err := result.Save("screenshot")
 //
 // Concurrent Scraping:
 //
@@ -109,8 +109,8 @@
 //	}
 //	resultsChan := client.ConcurrentScrape(configs, 3)
 //	for result := range resultsChan {
-//	    if result.error != nil {
-//	        log.Printf("Error: %v", result.error)
+//	    if result.Error != nil {
+//	        log.Printf("Error: %v", result.Error)
 //	        continue
 //	    }
 //	    // Process result
