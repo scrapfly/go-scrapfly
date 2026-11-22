@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	js_scenario "github.com/scrapfly/go-scrapfly/scenario"
 )
@@ -39,8 +39,8 @@ type ScrapeConfig struct {
 	Headers map[string]string
 	// Cookies are cookies to include in the request.
 	Cookies map[string]string
-	// Country specifies the proxy country code (e.g., "us", "uk", "de").
-	// Supports ISO 3166-1 alpha-2 country codes.
+	// Country accepts a country code, a comma-separated list, exclusions
+	// ("-us,-ca"), or weighted entries ("us:1,ca:2").
 	Country string
 	// ProxyPool selects the proxy pool: PublicDataCenterPool (the default),
 	// PublicResidentialPool or PublicTorPool. Empty sends no proxy_pool.
@@ -203,8 +203,6 @@ func (c *ScrapeConfig) processBody() error {
 	return nil
 }
 
-var countryRegex = regexp.MustCompile("^([a-zA-Z]{2}|)$")
-
 func (c *ScrapeConfig) validateScenarioRendering() error {
 	if len(c.JSScenario) > 0 && !c.RenderJS {
 		return fmt.Errorf("%w: js_scenario requires render_js=true", ErrScrapeConfig)
@@ -227,13 +225,8 @@ func (c *ScrapeConfig) validateConfig() error {
 		return err
 	}
 
-	// validate country code
-	// "^([a-zA-Z]{2}|)$" regex
-	if c.Country != "" {
-		country := strings.ToLower(c.Country)
-		if !countryRegex.MatchString(country) {
-			return fmt.Errorf("%w: invalid country code (ISO 3166-1 alpha-2): %s", ErrScrapeConfig, country)
-		}
+	if err := c.validateCountry(); err != nil {
+		return err
 	}
 
 	if err := c.validateScenarioRendering(); err != nil {
@@ -276,6 +269,29 @@ func (c *ScrapeConfig) validateConfig() error {
 		}
 	}
 
+	return nil
+}
+
+// validateCountry checks each entry without changing the requested selection.
+func (c *ScrapeConfig) validateCountry() error {
+	if c.Country == "" {
+		return nil
+	}
+	for _, entry := range strings.Split(c.Country, ",") {
+		code := entry
+		if strings.HasPrefix(entry, "-") {
+			code = strings.TrimPrefix(entry, "-")
+		} else if before, weightText, weighted := strings.Cut(entry, ":"); weighted {
+			code = before
+			weight, err := strconv.ParseInt(weightText, 10, 8)
+			if err != nil || weight <= 0 {
+				return fmt.Errorf("%w: invalid country weight: %s", ErrScrapeConfig, entry)
+			}
+		}
+		if utf8.RuneCountInString(code) != 2 {
+			return fmt.Errorf("%w: invalid country entry: %s", ErrScrapeConfig, entry)
+		}
+	}
 	return nil
 }
 

@@ -3572,8 +3572,8 @@ type ScrapeConfig struct {
 	Headers map[string]string
 	// Cookies are cookies to include in the request.
 	Cookies map[string]string
-	// Country specifies the proxy country code (e.g., "us", "uk", "de").
-	// Supports ISO 3166-1 alpha-2 country codes.
+	// Country accepts a country code, a comma-separated list, exclusions
+	// ("-us,-ca"), or weighted entries ("us:1,ca:2").
 	Country string
 	// ProxyPool selects the proxy pool: PublicDataCenterPool (the default),
 	// PublicResidentialPool or PublicTorPool. Empty sends no proxy_pool.
