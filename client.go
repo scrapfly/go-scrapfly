@@ -478,7 +478,19 @@ func (c *Client) ScrapeProxified(config *ScrapeConfig) (*http.Response, error) {
 func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int) <-chan ConcurrentScrapeResult {
 	resultsChan := make(chan ConcurrentScrapeResult, len(configs))
 
-	var wg sync.WaitGroup
+	jobs := make(chan *ScrapeConfig, len(configs))
+	for _, config := range configs {
+		if err := config.validateScenarioRendering(); err != nil {
+			resultsChan <- ConcurrentScrapeResult{Error: err}
+			continue
+		}
+		jobs <- config
+	}
+	close(jobs)
+	if len(jobs) == 0 {
+		close(resultsChan)
+		return resultsChan
+	}
 
 	if concurrencyLimit <= 0 {
 		account, err := c.Account()
@@ -494,7 +506,7 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
 		DefaultLogger.Info("concurrency not provided - setting it to", concurrencyLimit, "from account info")
 	}
 
-	jobs := make(chan *ScrapeConfig, len(configs))
+	var wg sync.WaitGroup
 	for i := 0; i < concurrencyLimit; i++ {
 		wg.Add(1)
 		go func() {
@@ -505,11 +517,6 @@ func (c *Client) ConcurrentScrape(configs []*ScrapeConfig, concurrencyLimit int)
 			}
 		}()
 	}
-
-	for _, config := range configs {
-		jobs <- config
-	}
-	close(jobs)
 
 	go func() {
 		wg.Wait()

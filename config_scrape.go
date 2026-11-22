@@ -205,6 +205,13 @@ func (c *ScrapeConfig) processBody() error {
 
 var countryRegex = regexp.MustCompile("^([a-zA-Z]{2}|)$")
 
+func (c *ScrapeConfig) validateScenarioRendering() error {
+	if len(c.JSScenario) > 0 && !c.RenderJS {
+		return fmt.Errorf("%w: js_scenario requires render_js=true", ErrScrapeConfig)
+	}
+	return nil
+}
+
 func (c *ScrapeConfig) validateConfig() error {
 
 	// validate exclusive fields, see struct tags
@@ -229,13 +236,16 @@ func (c *ScrapeConfig) validateConfig() error {
 		}
 	}
 
-	if c.RenderJS {
-
-		if len(c.JSScenario) > 0 {
-			if _, err := json.Marshal(c.JSScenario); err != nil {
-				return fmt.Errorf("failed to marshal js_scenario: %w", err)
-			}
+	if err := c.validateScenarioRendering(); err != nil {
+		return err
+	}
+	if len(c.JSScenario) > 0 {
+		if _, err := json.Marshal(c.JSScenario); err != nil {
+			return fmt.Errorf("failed to marshal js_scenario: %w", err)
 		}
+	}
+
+	if c.RenderJS {
 		if len(c.Screenshots) > 0 {
 			for name, value := range c.Screenshots {
 				if value == "" {
@@ -243,7 +253,6 @@ func (c *ScrapeConfig) validateConfig() error {
 				}
 			}
 		}
-
 	}
 
 	if c.ExtractionEphemeralTemplate != nil {
