@@ -36,6 +36,7 @@ type CloudBrowserConfig struct {
 	// server-side at 3 entries.
 	Languages    []string `json:"languages,omitempty"`
 	Session      string   `json:"session,omitempty"`
+	ShareCDP     bool     `json:"share_cdp,omitempty"` // Join an existing named browser on a new tab.
 	Timeout      int      `json:"timeout,omitempty"` // Session timeout in seconds (default 900)
 	BlockImages  bool     `json:"block_images,omitempty"`
 	BlockStyles  bool     `json:"block_styles,omitempty"`
@@ -199,6 +200,9 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 		if config.Session != "" {
 			params.Set("session", config.Session)
+		}
+		if config.ShareCDP {
+			params.Set("share_cdp", "true")
 		}
 		if config.Timeout > 0 {
 			params.Set("timeout", fmt.Sprintf("%d", config.Timeout))
