@@ -59,7 +59,8 @@ type ScreenshotConfig struct {
 	Capture string
 	// Resolution sets the viewport size (e.g., "1920x1080").
 	Resolution string
-	// Country specifies the proxy country code (e.g., "us", "uk", "de").
+	// Country accepts a country code, a comma-separated list, or exclusions
+	// ("-us,-ca").
 	Country string
 	// Timeout sets the maximum time in milliseconds to wait for the request.
 	Timeout int
