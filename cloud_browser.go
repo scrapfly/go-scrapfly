@@ -57,7 +57,7 @@ type CloudBrowserConfig struct {
 	// Strongly recommended. Routing is decided once, when the session opens, so
 	// a session declared without a target cannot be re-routed afterwards.
 	//
-	// Must be an absolute URL including the scheme ("https://example.com"); a
+	// Must be an absolute URL including the scheme ("https://web-scraping.dev"); a
 	// bare hostname is rejected server-side and silently leaves the session
 	// without a declared target.
 	TargetURL string `json:"target_url,omitempty"`

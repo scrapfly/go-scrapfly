@@ -6,7 +6,7 @@ import "testing"
 // explicit opt-out, &true = explicit sticky. Sending nothing for an explicit
 // false would let the API fall back to its default (sticky=true with a
 // session), so the user could never turn proxy stickiness off — the bug
-// behind the ipify "same IP" report.
+// behind the "same IP" report.
 
 func boolPtr(b bool) *bool { return &b }
 
