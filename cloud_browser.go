@@ -1277,9 +1277,9 @@ func (c *Client) CloudBrowserVaultServiceUnlink(vaultID string, keepItems bool) 
 // vaultKey is required: the sealed service-account token is opened with
 // it, and the server verifies the key before claiming the sync round.
 //
-// The server budget is 25s. The SDK has one client-wide timeout (160s,
-// see New / NewWithHost) and no per-call deadline, so a slow provider
-// still returns the server's own report instead of a client-side cancel.
+// The server budget is 25s. This call runs under the client-wide timeout
+// (160s, see New / NewWithHost), so a slow provider still returns the
+// server's own report instead of a client-side cancel.
 func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[string]interface{}, error) {
 	host := c.cloudBrowserRESTHost()
 	reqURL := fmt.Sprintf("%s/vault/%s/service/sync?key=%s", host, url.PathEscape(vaultID), url.QueryEscape(c.key))

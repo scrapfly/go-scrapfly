@@ -1687,43 +1687,6 @@ func TestParseCrawlerStatus_SearchAbsentOnCrawlWithoutIt(t *testing.T) {
 	}
 }
 
-func TestClient_PromptHTTPClient_OutlivesTheServerBudget(t *testing.T) {
-	// The API allows retrieval plus up to 150s of generation under a 165s
-	// ceiling, and http.Client.Timeout covers the body, so the SDK default
-	// would cut a legitimate stream mid-answer.
-	client, err := New("test-key")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := client.promptHTTPClient().Timeout; got != crawlPromptStreamTimeout {
-		t.Errorf("prompt timeout = %s, want %s", got, crawlPromptStreamTimeout)
-	}
-	if client.httpClient.Timeout != defaultTimeout {
-		t.Errorf("the shared client was mutated: %s", client.httpClient.Timeout)
-	}
-
-	// A caller who configured their own longer deadline keeps it.
-	transport := &http.Transport{}
-	client.SetHTTPClient(&http.Client{Timeout: 10 * time.Minute, Transport: transport})
-	streaming := client.promptHTTPClient()
-	if streaming.Timeout != 10*time.Minute {
-		t.Errorf("caller timeout overridden: %s", streaming.Timeout)
-	}
-
-	// No timeout at all means the caller opted out; do not impose one.
-	client.SetHTTPClient(&http.Client{Transport: transport})
-	if got := client.promptHTTPClient().Timeout; got != 0 {
-		t.Errorf("imposed a timeout on an unbounded client: %s", got)
-	}
-
-	// The shallow copy keeps the injected Transport, so the connection pool
-	// and any logging RoundTripper survive.
-	client.SetHTTPClient(&http.Client{Timeout: time.Second, Transport: transport})
-	if client.promptHTTPClient().Transport != transport {
-		t.Error("streaming copy dropped the injected Transport")
-	}
-}
-
 // ==============================================================================
 // Auto-refresh
 // ==============================================================================

@@ -61,14 +61,17 @@ func withoutKey(rawURL string) string {
 // fetchWithRetry performs an HTTP request with automatic retry logic for 5xx errors.
 //
 // It retries the request up to the specified number of times with a delay between attempts.
-// Only server errors (5xx status codes) and network errors are retried. A timeout is not:
-// the API cancels a scrape whose client went away (ERR::SCRAPE::CLIENT_DISCONNECTED, not
-// billed), so a retry would start the scrape over and wait out the deadline again.
+// Only server errors (5xx status codes) and network errors are retried.
+// A timeout after the connection was made is returned at once, without a retry.
 // The request body must support re-reading via req.GetBody for retries to work properly.
 func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay time.Duration) (*http.Response, error) {
 	var lastErr error
 
 	for attempt := 0; attempt < retries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(delay)
+		}
+
 		// We need to be able to re-read the body on retries
 		var bodyReader io.ReadCloser
 		if req.Body != nil {
@@ -89,7 +92,6 @@ func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay t
 			}
 			lastErr = err
 			DefaultLogger.Debug("request failed:", err, "retrying...")
-			time.Sleep(delay)
 			continue
 		}
 
@@ -97,7 +99,6 @@ func fetchWithRetry(client *http.Client, req *http.Request, retries int, delay t
 			resp.Body.Close() // Close body to prevent resource leaks
 			lastErr = &APIError{Message: "server error", HTTPStatusCode: resp.StatusCode}
 			DefaultLogger.Debug("request failed with status", resp.StatusCode, "retrying...")
-			time.Sleep(delay)
 			continue
 		}
 

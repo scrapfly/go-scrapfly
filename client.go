@@ -23,6 +23,9 @@ const (
 	// defaultTimeout is the client-wide deadline. The Scrape API holds a request up to
 	// 155s and asks clients to read that long; 160s leaves a margin, as the Python SDK does.
 	defaultTimeout = 160 * time.Second
+
+	// extractionTimeout is the shortest deadline an Extract request is sent with.
+	extractionTimeout = 165 * time.Second
 )
 
 // Client is the main client for interacting with the Scrapfly API.
@@ -46,6 +49,11 @@ func (c *Client) SetCloudBrowserHost(host string) {
 // This lets callers install a custom transport (e.g. for request logging,
 // tracing, tests, or a shared connection pool).
 //
+// Its Timeout applies to every API call of the Client, except that Extract
+// waits at least 165s, CrawlArtifact 300s, and CrawlsPrompt, CrawlsPromptAnswer
+// and CrawlsExtract, with their single-crawl forms, 180s. A longer Timeout, or
+// none, is kept for those calls too.
+//
 // Passing nil is a no-op.
 //
 // Example — install a RoundTripper that logs every request:
@@ -66,6 +74,17 @@ func (c *Client) SetHTTPClient(httpClient *http.Client) {
 // Useful if callers want to wrap the existing transport instead of replacing it.
 func (c *Client) HTTPClient() *http.Client {
 	return c.httpClient
+}
+
+// httpClientAtLeast returns the client when its deadline is none or at least
+// timeout, else a shallow copy of it with timeout.
+func (c *Client) httpClientAtLeast(timeout time.Duration) *http.Client {
+	if c.httpClient.Timeout == 0 || c.httpClient.Timeout >= timeout {
+		return c.httpClient
+	}
+	extended := *c.httpClient
+	extended.Timeout = timeout
+	return &extended
 }
 
 // New creates a new Scrapfly client with the provided API key.
@@ -597,6 +616,8 @@ func (c *Client) Screenshot(config *ScreenshotConfig) (*ScreenshotResult, error)
 // This method uses Scrapfly's AI extraction capabilities to parse HTML and
 // extract structured data based on templates or prompts.
 //
+// The request waits at least 165s; a longer client Timeout, or none, is kept.
+//
 // Example:
 //
 //	config := &scrapfly.ExtractionConfig{
@@ -633,7 +654,7 @@ func (c *Client) Extract(config *ExtractionConfig) (*ExtractionResult, error) {
 		req.Header.Set("Content-Encoding", string(config.DocumentCompressionFormat))
 	}
 
-	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	resp, err := fetchWithRetry(c.httpClientAtLeast(extractionTimeout), req, defaultRetries, defaultDelay)
 	if err != nil {
 		return nil, err
 	}

@@ -677,7 +677,7 @@ func (c *Client) CrawlsPrompt(crawlIDs []string, prompt string, opts *CrawlPromp
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := doWithoutKey(c.promptHTTPClient(), req)
+	resp, err := doWithoutKey(c.httpClientAtLeast(crawlPromptStreamTimeout), req)
 	if err != nil {
 		return err
 	}
@@ -851,7 +851,7 @@ func (c *Client) postCrawlerJSON(path string, body map[string]interface{}, out i
 	req.Header.Set("User-Agent", sdkUserAgent)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := doWithoutKey(c.promptHTTPClient(), req)
+	resp, err := doWithoutKey(c.httpClientAtLeast(crawlPromptStreamTimeout), req)
 	if err != nil {
 		return err
 	}
@@ -876,18 +876,8 @@ func (c *Client) postCrawlerJSON(path string, body map[string]interface{}, out i
 // cut a legitimate stream mid-answer.
 const crawlPromptStreamTimeout = 180 * time.Second
 
-// promptHTTPClient returns a client whose deadline outlives the server's own
-// budget. It shallow-copies rather than mutating so an injected Transport,
-// its connection pool and every other request's deadline are left alone. A
-// caller who set a longer timeout, or none at all, keeps theirs.
-func (c *Client) promptHTTPClient() *http.Client {
-	if c.httpClient.Timeout == 0 || c.httpClient.Timeout >= crawlPromptStreamTimeout {
-		return c.httpClient
-	}
-	streaming := *c.httpClient
-	streaming.Timeout = crawlPromptStreamTimeout
-	return &streaming
-}
+// crawlArtifactTimeout is the shortest deadline a CrawlArtifact request is sent with.
+const crawlArtifactTimeout = 300 * time.Second
 
 // consumeCrawlerPromptStream decodes an SSE body into typed frames.
 //
@@ -1205,6 +1195,8 @@ func parseCrawlerRefreshState(body []byte) (*CrawlerRefreshState, error) {
 // `GET /crawl/{uuid}/artifact?type=warc|har` — returns raw bytes wrapped in
 // a CrawlerArtifact. The SDK does NOT bundle WARC/HAR parsers; use a library
 // like nlnwa/gowarc to walk the records.
+//
+// The download waits at least 300s; a longer client Timeout, or none, is kept.
 func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*CrawlerArtifact, error) {
 	if uuid == "" {
 		return nil, fmt.Errorf("%w: uuid must be a non-empty string", ErrCrawlerConfig)
@@ -1231,7 +1223,7 @@ func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*
 		req.Header.Set("Accept", "application/gzip, application/octet-stream, application/json")
 	}
 
-	resp, err := fetchWithRetry(c.httpClient, req, defaultRetries, defaultDelay)
+	resp, err := fetchWithRetry(c.httpClientAtLeast(crawlArtifactTimeout), req, defaultRetries, defaultDelay)
 	if err != nil {
 		return nil, err
 	}
