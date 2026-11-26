@@ -58,7 +58,7 @@ type CloudBrowserConfig struct {
 	// Strongly recommended. Routing is decided once, when the session opens, so
 	// a session declared without a target cannot be re-routed afterwards.
 	//
-	// Must be an absolute URL including the scheme ("https://example.com"); a
+	// Must be an absolute URL including the scheme ("https://web-scraping.dev"); a
 	// bare hostname is rejected server-side and silently leaves the session
 	// without a declared target.
 	TargetURL string `json:"target_url,omitempty"`
@@ -85,7 +85,8 @@ type CloudBrowserConfig struct {
 	// no extra CDP calls from the client.
 	//
 	// Billed per solved captcha, at the price of its type (Supported Captcha
-	// Types in the docs below); a failed attempt (captchaError) costs nothing.
+	// Types in the docs below); a failed attempt (captchaError) costs nothing
+	// unless the captcha's solve had started.
 	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
 	SolveCaptcha bool `json:"solve_captcha,omitempty"`
 

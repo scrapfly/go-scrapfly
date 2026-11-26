@@ -189,17 +189,31 @@ const (
     CANCELLED is a separate terminal state set when the user cancels the job.
 
 const (
-	CrawlerStopNoMoreURLs      = "no_more_urls"
-	CrawlerStopPageLimit       = "page_limit"
-	CrawlerStopMaxDuration     = "max_duration"
-	CrawlerStopMaxAPICredit    = "max_api_credit"
-	CrawlerStopSeedURLFailed   = "seed_url_failed"
-	CrawlerStopUserCancelled   = "user_cancelled"
-	CrawlerStopCrawlerError    = "crawler_error"
-	CrawlerStopNoAPICreditLeft = "no_api_credit_left"
-	CrawlerStopStorageError    = "storage_error"
+	CrawlerStopBacklogEmpty          = "backlog_empty"
+	CrawlerStopRetryBacklogOnly      = "retry_backlog_only"
+	CrawlerStopNoMoreURLs            = "no_more_urls"
+	CrawlerStopPageLimit             = "page_limit"
+	CrawlerStopMaxDurationReached    = "max_duration_reached"
+	CrawlerStopMaxAPICredit          = "max_api_credit"
+	CrawlerStopSeedURLFailed         = "seed_url_failed"
+	CrawlerStopUserCancelled         = "user_cancelled"
+	CrawlerStopCrawlerError          = "crawler_error"
+	CrawlerStopTargetNotAllowed      = "target_not_allowed"
+	CrawlerStopWebhookNotFound       = "webhook_not_found"
+	CrawlerStopStorageError          = "storage_error"
+	CrawlerStopRemoteListFetchFailed = "remote_list_fetch_failed"
+	CrawlerStopRemoteListTooLarge    = "remote_list_too_large"
+	CrawlerStopWorkerInterrupted     = "worker_interrupted"
+	CrawlerStopInternalError         = "internal_error"
 )
     Documented values for CrawlerState.StopReason.
+
+    CrawlerStopBacklogEmpty and CrawlerStopRetryBacklogOnly are a normal
+    completion: every URL found was crawled, or only URLs waiting
+    for a retry were left. A stop on a limit (CrawlerStopPageLimit,
+    CrawlerStopMaxDurationReached, CrawlerStopMaxAPICredit) or on
+    CrawlerStopCrawlerError after at least one visited page keeps its pages and
+    ends with is_success true: a stop on CrawlerStopMaxAPICredit is a success.
 
 const (
 	CrawlerSearchDisabled = "DISABLED"
@@ -235,6 +249,23 @@ const (
 	CrawlerRefreshFailed    = "FAILED"
 )
     Refresh states carried by CrawlerRefreshState.Status.
+
+const CrawlerStopMaxDuration = "max_duration"
+    CrawlerStopMaxDuration is the former name of CrawlerStopMaxDurationReached.
+
+    Deprecated: the API never returns it; a stop on max_duration is
+    CrawlerStopMaxDurationReached.
+
+const CrawlerStopNoAPICreditLeft = "no_api_credit_left"
+    CrawlerStopNoAPICreditLeft is a stop reason the API never returns.
+
+    Deprecated: the API never returns it.
+
+const CrawlerStopWorkerInterruptedLegacy = "worker_interupted"
+    CrawlerStopWorkerInterruptedLegacy is the misspelled value that crawls
+    stored before the correction still report.
+
+    Deprecated: use CrawlerStopWorkerInterrupted for new crawls.
 
 
 VARIABLES
@@ -1078,9 +1109,9 @@ func (c *Client) CloudBrowserVaultServiceSync(vaultID, vaultKey string) (map[str
     vaultKey is required: the sealed service-account token is opened with it,
     and the server verifies the key before claiming the sync round.
 
-    The server budget is 25s. The SDK has one client-wide timeout (160s, see New
-    / NewWithHost) and no per-call deadline, so a slow provider still returns
-    the server's own report instead of a client-side cancel.
+    The server budget is 25s. This call runs under the client-wide timeout
+    (160s, see New / NewWithHost), so a slow provider still returns the server's
+    own report instead of a client-side cancel.
 
 func (c *Client) CloudBrowserVaultServiceTest(vaultID, vaultKey string, linkedService CloudBrowserLinkedService, token string) (map[string]interface{}, error)
     CloudBrowserVaultServiceTest probes provider credentials without reading
@@ -1160,6 +1191,8 @@ func (c *Client) CrawlArtifact(uuid string, artifactType CrawlerArtifactType) (*
     `GET /crawl/{uuid}/artifact?type=warc|har` — returns raw bytes wrapped in
     a CrawlerArtifact. The SDK does NOT bundle WARC/HAR parsers; use a library
     like nlnwa/gowarc to walk the records.
+
+    The download waits at least 300s; a longer client Timeout, or none, is kept.
 
 func (c *Client) CrawlCancel(uuid string) error
     CrawlCancel cancels a running crawler job.
@@ -1394,6 +1427,8 @@ func (c *Client) Extract(config *ExtractionConfig) (*ExtractionResult, error)
     This method uses Scrapfly's AI extraction capabilities to parse HTML and
     extract structured data based on templates or prompts.
 
+    The request waits at least 165s; a longer client Timeout, or none, is kept.
+
     Example:
 
         config := &scrapfly.ExtractionConfig{
@@ -1598,6 +1633,11 @@ func (c *Client) SetHTTPClient(httpClient *http.Client)
     This lets callers install a custom transport (e.g. for request logging,
     tracing, tests, or a shared connection pool).
 
+    Its Timeout applies to every API call of the Client, except that
+    Extract waits at least 165s, CrawlArtifact 300s, and CrawlsPrompt,
+    CrawlsPromptAnswer and CrawlsExtract, with their single-crawl forms, 180s.
+    A longer Timeout, or none, is kept for those calls too.
+
     Passing nil is a no-op.
 
     Example — install a RoundTripper that logs every request:
@@ -1732,7 +1772,8 @@ type CloudBrowserConfig struct {
 	// no extra CDP calls from the client.
 	//
 	// Billed per solved captcha, at the price of its type (Supported Captcha
-	// Types in the docs below); a failed attempt (captchaError) costs nothing.
+	// Types in the docs below); a failed attempt (captchaError) costs nothing
+	// unless the captcha's solve had started.
 	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
 	SolveCaptcha bool `json:"solve_captcha,omitempty"`
 
@@ -3850,7 +3891,8 @@ type ScreenshotConfig struct {
 	Capture string
 	// Resolution sets the viewport size (e.g., "1920x1080").
 	Resolution string
-	// Country specifies the proxy country code (e.g., "us", "uk", "de").
+	// Country accepts a country code, a comma-separated list, or exclusions
+	// ("-us,-ca").
 	Country string
 	// Timeout sets the maximum time in milliseconds to wait for the request.
 	Timeout int

@@ -438,7 +438,7 @@ func TestComplianceDoesNotFollowExternalRedirect(t *testing.T) {
 	requireComplete(t, crawl)
 
 	// No hard assertion on a trap counter; the test passes if the crawl
-	// completes (i.e. did not get redirected forever to example.com).
+	// completes (i.e. did not follow the external redirect forever).
 	t.Logf("[observation] external redirect followed: %d",
 		hitCount(fetchReport(t), "external_redirect_followed"))
 }

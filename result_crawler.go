@@ -25,17 +25,48 @@ const (
 )
 
 // Documented values for CrawlerState.StopReason.
+//
+// CrawlerStopBacklogEmpty and CrawlerStopRetryBacklogOnly are a normal
+// completion: every URL found was crawled, or only URLs waiting for a retry
+// were left. A stop on a limit (CrawlerStopPageLimit,
+// CrawlerStopMaxDurationReached, CrawlerStopMaxAPICredit) or on
+// CrawlerStopCrawlerError after at least one visited page keeps its pages and
+// ends with is_success true: a stop on CrawlerStopMaxAPICredit is a success.
 const (
-	CrawlerStopNoMoreURLs      = "no_more_urls"
-	CrawlerStopPageLimit       = "page_limit"
-	CrawlerStopMaxDuration     = "max_duration"
-	CrawlerStopMaxAPICredit    = "max_api_credit"
-	CrawlerStopSeedURLFailed   = "seed_url_failed"
-	CrawlerStopUserCancelled   = "user_cancelled"
-	CrawlerStopCrawlerError    = "crawler_error"
-	CrawlerStopNoAPICreditLeft = "no_api_credit_left"
-	CrawlerStopStorageError    = "storage_error"
+	CrawlerStopBacklogEmpty          = "backlog_empty"
+	CrawlerStopRetryBacklogOnly      = "retry_backlog_only"
+	CrawlerStopNoMoreURLs            = "no_more_urls"
+	CrawlerStopPageLimit             = "page_limit"
+	CrawlerStopMaxDurationReached    = "max_duration_reached"
+	CrawlerStopMaxAPICredit          = "max_api_credit"
+	CrawlerStopSeedURLFailed         = "seed_url_failed"
+	CrawlerStopUserCancelled         = "user_cancelled"
+	CrawlerStopCrawlerError          = "crawler_error"
+	CrawlerStopTargetNotAllowed      = "target_not_allowed"
+	CrawlerStopWebhookNotFound       = "webhook_not_found"
+	CrawlerStopStorageError          = "storage_error"
+	CrawlerStopRemoteListFetchFailed = "remote_list_fetch_failed"
+	CrawlerStopRemoteListTooLarge    = "remote_list_too_large"
+	CrawlerStopWorkerInterrupted     = "worker_interrupted"
+	CrawlerStopInternalError         = "internal_error"
 )
+
+// CrawlerStopMaxDuration is the former name of CrawlerStopMaxDurationReached.
+//
+// Deprecated: the API never returns it; a stop on max_duration is
+// CrawlerStopMaxDurationReached.
+const CrawlerStopMaxDuration = "max_duration"
+
+// CrawlerStopNoAPICreditLeft is a stop reason the API never returns.
+//
+// Deprecated: the API never returns it.
+const CrawlerStopNoAPICreditLeft = "no_api_credit_left"
+
+// CrawlerStopWorkerInterruptedLegacy is the misspelled value that crawls
+// stored before the correction still report.
+//
+// Deprecated: use CrawlerStopWorkerInterrupted for new crawls.
+const CrawlerStopWorkerInterruptedLegacy = "worker_interupted"
 
 // CrawlerStartResponse is the response from POST /crawl.
 type CrawlerStartResponse struct {

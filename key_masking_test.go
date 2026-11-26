@@ -43,10 +43,10 @@ func TestPromptTransportErrorDoesNotPrintTheKey(t *testing.T) {
 
 func TestWithoutKey(t *testing.T) {
 	for raw, want := range map[string]string{
-		"https://api.scrapfly.io/scrape?key=scp-live-abc&url=https%3A%2F%2Fx.io": "https://api.scrapfly.io/scrape?key=REDACTED&url=https%3A%2F%2Fx.io",
-		"https://api.scrapfly.io/account":                                        "https://api.scrapfly.io/account",
-		"https://api.scrapfly.io/scrape?url=a":                                   "https://api.scrapfly.io/scrape?url=a",
-		"https://api.scrapfly.io/x?key=%zz":                                      "https://api.scrapfly.io/x",
+		"https://api.scrapfly.io/scrape?key=scp-live-abc&url=https%3A%2F%2Fweb-scraping.dev": "https://api.scrapfly.io/scrape?key=REDACTED&url=https%3A%2F%2Fweb-scraping.dev",
+		"https://api.scrapfly.io/account":      "https://api.scrapfly.io/account",
+		"https://api.scrapfly.io/scrape?url=a": "https://api.scrapfly.io/scrape?url=a",
+		"https://api.scrapfly.io/x?key=%zz":    "https://api.scrapfly.io/x",
 	} {
 		if got := withoutKey(raw); got != want {
 			t.Errorf("withoutKey(%q) = %q, want %q", raw, got, want)
