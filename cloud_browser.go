@@ -84,7 +84,8 @@ type CloudBrowserConfig struct {
 	// no extra CDP calls from the client.
 	//
 	// Billed per solved captcha, at the price of its type (Supported Captcha
-	// Types in the docs below); a failed attempt (captchaError) costs nothing.
+	// Types in the docs below); a failed attempt (captchaError) costs nothing
+	// unless the captcha's solve had started.
 	// See https://scrapfly.io/docs/cloud-browser-api/captcha-solver for details.
 	SolveCaptcha bool `json:"solve_captcha,omitempty"`
 
