@@ -20,6 +20,12 @@ const (
 	defaultCloudBrowserHost = "https://browser.scrapfly.io"
 )
 
+// NetworkPolicy allows or blocks domains (including their subdomains) and IP addresses.
+type NetworkPolicy struct {
+	Allow []string `json:"allow,omitempty"`
+	Block []string `json:"block,omitempty"`
+}
+
 // CloudBrowserConfig configures a Cloud Browser session.
 type CloudBrowserConfig struct {
 	// ProxyPool is "datacenter", "residential", "tor" or "byop".
@@ -62,6 +68,9 @@ type CloudBrowserConfig struct {
 	// bare hostname is rejected server-side and silently leaves the session
 	// without a declared target.
 	TargetURL string `json:"target_url,omitempty"`
+
+	// NetworkPolicy restricts the hosts this session can reach.
+	NetworkPolicy *NetworkPolicy `json:"network_policy,omitempty"`
 
 	// BYOPProxy is a "Bring Your Own Proxy" URL that the Cloud Browser will use
 	// instead of Scrapfly's managed proxy pools.
@@ -234,6 +243,10 @@ func (c *Client) CloudBrowser(config *CloudBrowserConfig) string {
 		}
 		if config.Resolution != "" {
 			params.Set("resolution", config.Resolution)
+		}
+		if p := config.NetworkPolicy; p != nil && (len(p.Allow) > 0 || len(p.Block) > 0) {
+			encoded, _ := json.Marshal(p) // NetworkPolicy contains only lists of strings.
+			params.Set("network_policy", string(encoded))
 		}
 		if config.TargetURL != "" {
 			params.Set("target_url", config.TargetURL)
